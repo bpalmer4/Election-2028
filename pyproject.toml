@@ -1,0 +1,46 @@
+[project]
+name = "australian-federal-election-2028"
+version = "0.0.0"
+description = "Australian Federal Election 2028"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    # - Jupyter notebooks
+    "ipykernel",
+    "watermark",
+
+    # - system
+    "typing",
+
+    # - bespoke
+    "readabs",
+
+    # - data science
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "openpyxl",
+    "xlrd",
+    "statsmodels",
+
+    # - internet
+    "requests",
+    "bs4",
+    "lxml",
+    "webdriver_manager",
+    "selenium",
+
+    # - Bayesian
+    "pymc",
+    "arviz",
+    "jax",
+    "numpyro",
+    "graphviz",
+
+    # - code
+    "nbqa",
+    "black",
+    "pylint",
+    "ruff",
+    "mypy",
+]
