@@ -24,7 +24,7 @@ LAST_DATE = "Last Date"
 ALL_DATES = [FIRST_DATE, MIDDLE_DATE, LAST_DATE]
 
 COLOR_COALITION = "royalblue"
-COLOR_LABOR = "crimson"
+COLOR_LABOR = "indianred"
 
 
 # --- FILE PATHS
