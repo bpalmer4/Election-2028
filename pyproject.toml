@@ -46,4 +46,8 @@ dependencies = [
     "pylint",
     "ruff",
     "mypy",
+    "pyright",
+
+    # - typing
+    "pandas-stubs",
 ]
