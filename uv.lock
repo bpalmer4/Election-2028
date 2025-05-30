@@ -146,6 +146,7 @@ dependencies = [
     { name = "mypy" },
     { name = "nbqa" },
     { name = "numpy" },
+    { name = "numpy-typing" },
     { name = "numpyro" },
     { name = "openpyxl" },
     { name = "pandas" },
@@ -158,6 +159,7 @@ dependencies = [
     { name = "ruff" },
     { name = "selenium" },
     { name = "statsmodels" },
+    { name = "types-selenium" },
     { name = "typing" },
     { name = "watermark" },
     { name = "webdriver-manager" },
@@ -180,6 +182,7 @@ requires-dist = [
     { name = "mypy" },
     { name = "nbqa" },
     { name = "numpy" },
+    { name = "numpy-typing" },
     { name = "numpyro" },
     { name = "openpyxl" },
     { name = "pandas" },
@@ -192,6 +195,7 @@ requires-dist = [
     { name = "ruff" },
     { name = "selenium" },
     { name = "statsmodels" },
+    { name = "types-selenium" },
     { name = "typing" },
     { name = "watermark" },
     { name = "webdriver-manager" },
@@ -1470,6 +1474,15 @@ wheels = [
 ]
 
 [[package]]
+name = "numpy-typing"
+version = "1.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b0/71/0e00b8ea4d0a6b6ec89ee16b68225fbe68e390e43e5e49c4532d9b7e8165/numpy_typing-1.1.1.tar.gz", hash = "sha256:023005afafbc72d84b450d23a2f110cfca255bddd1ef55aa8ef87207a9dbf83c", size = 6922, upload-time = "2024-10-14T09:00:25.842Z" }
+
+[[package]]
 name = "numpyro"
 version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2428,6 +2441,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bd/72/b0e711fd90409f5a76c75349055d3eb19992c110f0d2d6aabbd6cfbc14bf/types_pytz-2025.2.0.20250516.tar.gz", hash = "sha256:e1216306f8c0d5da6dafd6492e72eb080c9a166171fa80dd7a1990fd8be7a7b3", size = 10940, upload-time = "2025-05-16T03:07:01.91Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/ba/e205cd11c1c7183b23c97e4bcd1de7bc0633e2e867601c32ecfc6ad42675/types_pytz-2025.2.0.20250516-py3-none-any.whl", hash = "sha256:e0e0c8a57e2791c19f718ed99ab2ba623856b11620cb6b637e5f62ce285a7451", size = 10136, upload-time = "2025-05-16T03:07:01.075Z" },
+]
+
+[[package]]
+name = "types-selenium"
+version = "3.141.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/e9/4ff535ce02a2c7cbbe6f33ac2aabb3f284977f76609a19ad30edee727c55/types-selenium-3.141.9.tar.gz", hash = "sha256:0817ad9914f5d4c5b064ca2fbf694a1b4c668465a502bd3d1248d82e098132ce", size = 18495, upload-time = "2022-03-06T03:18:28.329Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4b/05/67524387f0b4968ff83462e8526913e563d51d4c0bacbb3a3095d9b11e46/types_selenium-3.141.9-py3-none-any.whl", hash = "sha256:83606e061154bc2241d6eba964263f9cf1dcaa6c7dfff0bb10d3abcfbdaefdc7", size = 39074, upload-time = "2022-03-06T03:18:26.997Z" },
 ]
 
 [[package]]

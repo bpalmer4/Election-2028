@@ -50,4 +50,6 @@ dependencies = [
 
     # - typing
     "pandas-stubs",
+    "numpy-typing",
+    "types-selenium",
 ]
