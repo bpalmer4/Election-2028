@@ -15,7 +15,7 @@ __pycache__/
 charts/**
 data/**
 model-images/**
-notebooks/grave-yard/**
+notebooks/Graveyard/**
 CLAUDE.md
 
 # Automated directory - ignore sensitive files only
