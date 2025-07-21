@@ -1,0 +1,349 @@
+<html lang="en" class="fe2022"><!-- InstanceBegin template="/Templates/aecgovau-fancy.dwt" codeOutsideHTMLIsLocked="false" -->
+<head>
+	<meta charset="utf-8">
+	<!-- InstanceParam name="title" type="text" value="404 - Sauce not found" -->
+	<!-- InstanceParam name="lead" type="text" value="Don't worry, we're off to the shops to get more " -->
+	<!-- InstanceParam name="sectionNav" type="boolean" value="false" -->
+	<!-- InstanceParam name="bookmarks" type="boolean" value="false" -->
+	<!-- InstanceParam name="description" type="text" value="Page not found" -->
+	<!-- InstanceParam name="keywords" type="text" value="AEC redirection page, 404" -->
+	<!-- InstanceParam name="owner" type="text" value="Content owner" -->
+	<!-- InstanceParam name="htmlclass" type="text" value="fe2022" -->
+	<!-- InstanceParam name="bannerClass" type="text" value="banner--voter" -->
+	<title>404 - Sauce not found - Australian Electoral Commission</title>
+	<meta name="DCTERMS.creator" content="corporateName=Australian Electoral Commission; address=10 Mort Street, Canberra ACT 2600; contact=13 23 26">
+	<meta name="DCTERMS.title" content="404 - Sauce not found">
+	<meta name="DCTERMS.description" content="Page not found">
+    <meta name="description" content="Page not found">
+	<meta name="DCTERMS.subject" content="AEC redirection page, 404">
+	<meta name="DCTERMS.contributor" content="Content owner">
+	<meta name="DCTERMS.language" content="en-AU" />
+	<!-- Social metadata-->
+	<meta property="og:image" content="https://www.aec.gov.au/_template/css/img/aec-logo.png">
+	<meta property="og:title" content="404 - Sauce not found">
+    <meta property="og:description" content="Page not found">
+	<meta property="og:site_name" content="Australian Electoral Commission">
+	<!-- InstanceBeginEditable name="head" -->
+	<meta name="DCTERMS.created" content="2007-06-14">	
+	<meta name="DCTERMS.modified" content="2011-01-10">
+	<meta name="DCTERMS.identifier" content="http://www.aec.gov.au/error/404.htm">
+	
+	<!-- InstanceEndEditable -->
+	<link rel="shortcut icon" href="/favicon.ico" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" type="text/css" href="/_template/css/bootstrap.min.css">
+<link rel="stylesheet" type="text/css" href="/_template/css/aec-main.min.css?v=1.16">
+<link rel="stylesheet" type="text/css" href="/_template/css/print.css" media="print">
+<link rel="stylesheet" type="text/css" href="/_template/css/fontawesome-all.min.css?v=1.1" media="screen">
+<!-- IE6-9 support of HTML5 elements -->
+<!--[if IE 9]>
+  <link href="/_template/css/bootstrap-ie9.css" rel="stylesheet">
+<![endif]-->
+<!--[if lte IE 8]>
+  <link href="/_template/css/bootstrap-ie8.css" rel="stylesheet">
+  <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.6.1/html5shiv.js"></script>
+<![endif]-->
+	<!-- InstanceBeginEditable name="override" -->
+    <style>
+@media screen and (min-width: 768px) {
+	.banner--voter .fancy__image{
+		background: transparent url("/_template/css/img/banners/banner-election-sausage.jpg") right top no-repeat;
+		background-position: calc(50% + 485px) 100%;
+        background-color: transparent;
+        background-repeat: no-repeat;
+	}
+    }
+	</style>
+    <!-- InstanceEndEditable -->
+</head>
+<body class="fancy banner--voter">
+	<!-- change banner class for templated image .banner--voter, .banner--parties, .banner--learn, .banner--info, .banner--aec, .banner--video -->
+	<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-1YH8SW4TMH"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-1YH8SW4TMH');
+</script>
+<!--[if lte IE 9]>
+	<div class="container"><div class="row">
+	<div class="alert alert-warning"><p>The AEC website may not display correctly as it is not optimised for your browser. Please consider updating your browser.</p></div></div></div>
+<![endif]-->
+<!-- BANNER -->
+<header id="topPage" role="banner">
+	<div class="container">
+  		<div class="row">
+    		<div class="col-lg-8 col-sm-6">
+        		<a href="#start" class="visually-hidden skip-content">Skip to content</a><a href="/assistance" class="visually-hidden skip-content">Information for people with disability</a><a href="/footer/accessibility.htm" class="visually-hidden skip-content">Information on accessibility</a>
+      			<h1 class="visually-hidden">Australian Electoral Commission</h1>
+      			<a href="/"><img src="/_template/css/img/aec-logo-homepage.png" alt="AEC logo" class="aec-logo"></a>
+        	</div>
+    		<div class="col-md-4 col-sm-6 hidden-xs"> 
+				<!--<script type="text/javascript">
+				function validateSearch(frm) {
+					var searchQuery = $("input[id=query]").val();
+					if ((!searchQuery)) {
+						$("input[id=query]").focus();
+						return false;
+					}
+					return true;
+				}
+				</script>
+                <form class="site-search" action="https://aec-search.clients.funnelback.com/s/search.html" method="get" onsubmit="return validateSearch();">
+                    <div class="input-group">
+                        <input type="hidden" class="hiddens" name="collection" value="aec">
+                        <input type="hidden" class="hiddens" name="form" value="simple">
+                        <input type="hidden" class="hiddens" name="profile" value="aec">
+                        <label for="query" class="visually-hidden">Search the AEC website</label>
+                        <input type="text" name="query" class="form-control" id="query" value="" placeholder="Search for...">                    
+                        <span class="input-group-btn">
+                        	<button class="btn btn-default" type="submit">Search</button>
+                        </span>
+                    </div>
+                </form>-->
+<script type="text/javascript">
+					function validateSearch(frm) {
+						var searchQuery = $("input[id=query]").val();
+						if ((!searchQuery)) {
+							$("input[id=query]").focus();
+							return false;
+						}
+						return true;
+					}
+				</script>
+				<div class="search-form" role="search">
+					<form action="https://aec-search.funnelback.squiz.cloud/s/search.html" method="get" onsubmit="return validateSearch();">
+						<div class="search-form__wrapper">
+							<input type="hidden" class="hiddens" name="collection" value="aec~sp-aec">
+							<input type="hidden" class="hiddens" name="form" value="simple">
+							<input type="hidden" class="hiddens" name="profile" value="aec">
+							<label for="query" class="visually-hidden">Search the AEC website</label>
+							<input type="text" name="query" class="search-form__input" id="query" value="" placeholder="What are you looking for?">                    
+							<div class="search-form__button">
+								<button type="submit" class="search-form__icon--button" value="Search"><i class="far fa-search" aria-hidden="true"></i><span class="visually-hidden">Search</span></button>
+							</div>
+						</div>
+					</form>
+				</div>
+
+    		</div>
+  		</div>
+    </div>
+</header>
+<!-- beginnoindex -->
+<!-- do not change this manually - use the menu.json in /_tools - then build using /_tools/menu-builder.htm -->
+<div class="header d-lg-none"><nav class="header__brand navbar"><div class="container-fluid"><div class="header__heading"> <a href="/"><img src="/_template/css/img/logo-aec-white-42px.png" alt="AEC logo"></a> </div><div class="header__menu"><button class="navbar-toggler p-0 border-0" type="button" id="globalNav" data-bs-toggle="offcanvas"><span class="visually-hidden">Menu</span><span class="fal fa-bars"></span> <span class="fal fa-times d-none"></span> </button></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l1" id="globalNavMenu"><script type="text/javascript">
+				function validateMobSearch(frm) {
+					var searchMobQuery = $("input[id=queries]").val();
+					if ((!searchMobQuery)) {
+						$("input[id=queries]").focus();
+						return false;
+					}
+					return true;
+				}
+				</script>
+                <form class="mobile-search" action="https://aec-search.clients.funnelback.com/s/search.html" method="get" onsubmit="return validateMobSearch();">
+                    <div class="search-form__wrapper">
+                        <input type="hidden" class="hiddens" name="collection" value="aec">
+                        <input type="hidden" class="hiddens" name="form" value="simple">
+                        <input type="hidden" class="hiddens" name="profile" value="aec">
+                        <label for="queries" class="visually-hidden">Search the AEC website</label>
+                        <input type="text" name="query" class="search-form__input" id="queries" value="" placeholder="What are you looking for?">                    
+                        <div class="search-form__button">
+							<button type="submit" class="search-form__icon--button" value="Search"><i class="far fa-search" aria-hidden="true"></i><span class="visually-hidden">Search</span></button>
+						</div>
+                    </div>
+                </form>
+<ul class="navbar-nav me-auto"><li class="nav-item" aria-level="1" aria-selected="false"><a class="nav-link nav-link--child" href="/" tabindex="0">Home</a></li><li class="nav-item" aria-level="1" aria-selected="false"><a class="nav-link nav-link--parent" data-bs-target="votersL2" aria-expanded="false" aria-atomic="true" tabindex="0">For voters</a></li><li class="nav-item" aria-level="1" aria-selected="false"><a class="nav-link nav-link--parent" data-bs-target="partiesL2" aria-expanded="false" aria-atomic="true" tabindex="0">For parties and political participants</a></li><li class="nav-item" aria-level="1" aria-selected="false"><a class="nav-link nav-link--parent" data-bs-target="learnL2" aria-expanded="false" aria-atomic="true" tabindex="0">Learn about elections</a></li><li class="nav-item" aria-level="1" aria-selected="false"><a class="nav-link nav-link--parent" data-bs-target="centreL2" aria-expanded="false" aria-atomic="true" tabindex="0">Information centre</a></li><li class="nav-item" aria-level="1" aria-selected="false"><a class="nav-link nav-link--parent" data-bs-target="aecL2" aria-expanded="false" aria-atomic="true" tabindex="0">The AEC</a></li></ul></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l2" id="votersL2"><div aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l2">For voters</div><ul class="navbar-nav me-auto" id="mobile_voters"><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="enrolL3">Enrolment</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="votingL3">Voting</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="engagementL3">Engagement</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="enrolL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Enrolment</div> <ul class="navbar-nav me-auto" id="smobile_enrol"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/enrol">Enrol to vote</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/update">Update my details</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/check">Check my enrolment</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Enrolling_to_vote/Special_Category/">Special category enrolment</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/news/new-citizens.htm">New citizens</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="votingL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Voting</div> <ul class="navbar-nav me-auto" id="smobile_voting"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/pva">Postal voting</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Voting/ways_to_vote/">Ways to vote</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Voting/How_to_Vote/">Completing my ballot paper</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Voting/How_to_vote/practice/">Practise voting</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="engagementL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Engagement</div> <ul class="navbar-nav me-auto" id="smobile_engagement"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Indigenous">Indigenous Australians</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/Translated_information/">Translated information</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/assistance">People with disability</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Enrolling_to_vote/Special_Category/no-fixed-address.htm">People with no fixed address</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/residential-care.htm">People living in residential aged care</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/election-campaigning.htm">Voter's guide to election communication</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l2" id="partiesL2"><div aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l2">For parties and political participants</div><ul class="navbar-nav me-auto" id="mobile_parties"><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="disclosureL3">Registration and disclosure</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="transparencyL3">Access and transparency</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="electionpL3">Electoral processes</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="disclosureL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Registration and disclosure</div> <ul class="navbar-nav me-auto" id="smobile_disclosure"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/party_registration/">Political party registration</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/financial_disclosure/significant-third-party-registration.htm">Significant third party registration</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/financial_disclosure/associated-entity-registration.htm">Associated entity registration</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/financial_disclosure/">Financial disclosure</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/referendum_disclosure/">Referendum disclosure</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="transparencyL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Access and transparency</div> <ul class="navbar-nav me-auto" id="smobile_transparency"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/financial_disclosure/transparency-register/">Transparency Register</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/party_registration/notices.htm">Register of political parties and decisions</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/party_registration/applications/index.htm">Current party applications and notices</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/era/">Electoral roll data access</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/compliance/">Compliance and enforcement</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/our-regulatory-approach/">Our regulatory approach</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="electionpL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Electoral processes</div> <ul class="navbar-nav me-auto" id="smobile_electionp"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Elections/candidates/party-workers.htm">Party and Campaign Workers</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Elections/candidates/">Candidate information hub</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Elections/candidates/scrutineers-handbook/">Scrutineer information</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/public_funding/">Election funding</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Elections/electoral-advertising/">Authorising electoral communication</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/Publications/backgrounders/">Electoral law backgrounders</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l2" id="learnL2"><div aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l2">Learn about elections</div><ul class="navbar-nav me-auto" id="mobile_learn"><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="deliveringL3">Delivering an election</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="vatgL3">Voting and the Government</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="educatorsL3">Education</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="deliveringL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Delivering an election</div> <ul class="navbar-nav me-auto" id="smobile_delivering"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Enrolling_to_vote/About_Electoral_Roll/">Managing the electoral roll</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Electorates/Redistributions/">Altering electoral divisions</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Voting/ballot-draw.htm">Determining ballot paper order</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/elections/planning-voter-services.htm">Planning voting services</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Voting/counting/">Counting the votes</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="vatgL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Voting and the Government</div> <ul class="navbar-nav me-auto" id="smobile_vatg"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/learn/three-levels.htm">The three levels of government</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/learn/election-timetable.htm">When elections are held</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/learn/formation-of-government.htm">Forming federal Government</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/learn/preferential-voting.htm">Preferential voting</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Elections/referendums/">Referendums</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="educatorsL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Education</div> <ul class="navbar-nav me-auto" id="smobile_educators"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="https://education.aec.gov.au/">AEC for schools</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/community/">Community education</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/community/accessible-education.htm">Accessible Education</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/elections/australian-elections.htm">Australian elections: A unique democracy</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l2" id="centreL2"><div aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l2">Information centre</div><ul class="navbar-nav me-auto" id="mobile_centre"><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="dataL3">Electoral divisions</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="electionsL3">Elections and events</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="mrL3">Transparency and integrity</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="dataL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Electoral divisions</div> <ul class="navbar-nav me-auto" id="smobile_data"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/electorate">Find my electoral division</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/profiles/">Current electoral divisions</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Enrolling_to_vote/Enrolment_stats/">Enrolment statistics</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Electorates/maps.htm">Maps and spatial data</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Electorates/Redistributions/">Electoral division redistributions</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="electionsL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Elections and events</div> <ul class="navbar-nav me-auto" id="smobile_elections"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Elections/federal_elections/2025/index.htm">2025 federal election</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="https://results.aec.gov.au/">Past results</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Elections/Federal_Elections/">Federal elections</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Elections/supplementary_by_elections/">By-elections</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Elections/referendums/">Referendums</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/ieb/">Industrial elections and ballots</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="mrL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Transparency and integrity</div> <ul class="navbar-nav me-auto" id="smobile_mr"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/safeguarding.htm">Election safeguards</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/reputation-management.htm">Reputation Management System</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/Parties_and_Representatives/financial_disclosure/transparency-register/">Transparency Register</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/Publications/backgrounders/">Electoral Backgrounders</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l2" id="aecL2"><div aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l2">The AEC</div><ul class="navbar-nav me-auto" id="mobile_aec"><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="whoL3">Who we are</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="careersL3">Work with us</a></li><li class="nav-item" aria-level="1" aria-selected="false"> <a class="nav-link nav-link--parent" role="menuitem" data-bs-target="linksL3">Talk to us</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="whoL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Who we are</div> <ul class="navbar-nav me-auto" id="smobile_who"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/">The AEC's role</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/Publications/annual-report/">Annual reports</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/Publications/corporate-plan/index.htm">Corporate plan</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/Publications/">Publications</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="careersL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Work with us</div> <ul class="navbar-nav me-auto" id="smobile_careers"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/employment/">AEC Careers</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="https://candidate.aurion.cloud/aec/production/">Current vacancies</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/employment/graduates.htm">Graduate Program</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/working-at-elections">Working at elections</a></li></ul></div></div><div class="navbar-collapse offcanvas-collapse offcanvas-collapse--l3" id="linksL3"><div role="menu" aria-level="2" aria-selected="false"><div class="menu__heading menu__heading--l3">Talk to us</div> <ul class="navbar-nav me-auto" id="smobile_links"><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/contact">Contact us</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/media">AEC Newsroom</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/cea-notices/">Notices</a></li><li class="nav-item" aria-level="3" aria-selected="false"> <a class="nav-link nav-link--child ua-menu" role="menuitem" href="/About_AEC/business-with-us.htm">AEC procurement</a></li></ul></div></div></div></nav></div> <div class="main-nav d-none d-lg-block"><div class="container"><nav class="main-nav__wrapper" role="navigation"><div class=""><ul class="menu-wrapper"><li><a class="menu-links" href="javascript:void(0)" role="button" aria-haspopup="true" aria-expanded="false">For voters</a><div class="sublinks container-fluid"><div class="row"><div class="col"><h3>Enrolment</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/enrol" class="ua-menu">Enrol to vote</a></li><li class="menu-list__item"><a role="menuitem" href="/update" class="ua-menu">Update my details</a></li><li class="menu-list__item"><a role="menuitem" href="/check" class="ua-menu">Check my enrolment</a></li><li class="menu-list__item"><a role="menuitem" href="/Enrolling_to_vote/Special_Category/" class="ua-menu">Special category enrolment</a></li><li class="menu-list__item"><a role="menuitem" href="/news/new-citizens.htm" class="ua-menu">New citizens</a></li></ul></div><div class="col"><h3>Voting</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/pva" class="ua-menu">Postal voting</a></li><li class="menu-list__item"><a role="menuitem" href="/Voting/ways_to_vote/" class="ua-menu">Ways to vote</a></li><li class="menu-list__item"><a role="menuitem" href="/Voting/How_to_Vote/" class="ua-menu">Completing my ballot paper</a></li><li class="menu-list__item"><a role="menuitem" href="/Voting/How_to_vote/practice/" class="ua-menu">Practise voting</a></li></ul></div><div class="col"><h3>Engagement</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/Indigenous" class="ua-menu">Indigenous Australians</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/Translated_information/" class="ua-menu">Translated information</a></li><li class="menu-list__item"><a role="menuitem" href="/assistance" class="ua-menu">People with disability</a></li><li class="menu-list__item"><a role="menuitem" href="/Enrolling_to_vote/Special_Category/no-fixed-address.htm" class="ua-menu">People with no fixed address</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/residential-care.htm" class="ua-menu">People living in residential aged care</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/election-campaigning.htm" class="ua-menu">Voter's guide to election communication</a></li></ul></div></div></div></li><li><a class="menu-links" href="javascript:void(0)" role="button" aria-haspopup="true" aria-expanded="false">For parties and political participants</a><div class="sublinks container-fluid"><div class="row"><div class="col"><h3>Registration and disclosure</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/party_registration/" class="ua-menu">Political party registration</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/financial_disclosure/significant-third-party-registration.htm" class="ua-menu">Significant third party registration</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/financial_disclosure/associated-entity-registration.htm" class="ua-menu">Associated entity registration</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/financial_disclosure/" class="ua-menu">Financial disclosure</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/referendum_disclosure/" class="ua-menu">Referendum disclosure</a></li></ul></div><div class="col"><h3>Access and transparency</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/financial_disclosure/transparency-register/" class="ua-menu">Transparency Register</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/party_registration/notices.htm" class="ua-menu">Register of political parties and decisions</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/party_registration/applications/index.htm" class="ua-menu">Current party applications and notices</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/era/" class="ua-menu">Electoral roll data access</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/compliance/" class="ua-menu">Compliance and enforcement</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/our-regulatory-approach/" class="ua-menu">Our regulatory approach</a></li></ul></div><div class="col"><h3>Electoral processes</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/Elections/candidates/party-workers.htm" class="ua-menu">Party and Campaign Workers</a></li><li class="menu-list__item"><a role="menuitem" href="/Elections/candidates/" class="ua-menu">Candidate information hub</a></li><li class="menu-list__item"><a role="menuitem" href="/Elections/candidates/scrutineers-handbook/" class="ua-menu">Scrutineer information</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/public_funding/" class="ua-menu">Election funding</a></li><li class="menu-list__item"><a role="menuitem" href="/Elections/electoral-advertising/" class="ua-menu">Authorising electoral communication</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/Publications/backgrounders/" class="ua-menu">Electoral law backgrounders</a></li></ul></div></div></div></li><li><a class="menu-links" href="javascript:void(0)" role="button" aria-haspopup="true" aria-expanded="false">Learn about elections</a><div class="sublinks container-fluid"><div class="row"><div class="col"><h3>Delivering an election</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/Enrolling_to_vote/About_Electoral_Roll/" class="ua-menu">Managing the electoral roll</a></li><li class="menu-list__item"><a role="menuitem" href="/Electorates/Redistributions/" class="ua-menu">Altering electoral divisions</a></li><li class="menu-list__item"><a role="menuitem" href="/Voting/ballot-draw.htm" class="ua-menu">Determining ballot paper order</a></li><li class="menu-list__item"><a role="menuitem" href="/elections/planning-voter-services.htm" class="ua-menu">Planning voting services</a></li><li class="menu-list__item"><a role="menuitem" href="/Voting/counting/" class="ua-menu">Counting the votes</a></li></ul></div><div class="col"><h3>Voting and the Government</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/learn/three-levels.htm" class="ua-menu">The three levels of government</a></li><li class="menu-list__item"><a role="menuitem" href="/learn/election-timetable.htm" class="ua-menu">When elections are held</a></li><li class="menu-list__item"><a role="menuitem" href="/learn/formation-of-government.htm" class="ua-menu">Forming federal Government</a></li><li class="menu-list__item"><a role="menuitem" href="/learn/preferential-voting.htm" class="ua-menu">Preferential voting</a></li><li class="menu-list__item"><a role="menuitem" href="/Elections/referendums/" class="ua-menu">Referendums</a></li></ul></div><div class="col"><h3>Education</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="https://education.aec.gov.au/" class="ua-menu">AEC for schools</a></li><li class="menu-list__item"><a role="menuitem" href="/community/" class="ua-menu">Community education</a></li><li class="menu-list__item"><a role="menuitem" href="/community/accessible-education.htm" class="ua-menu">Accessible Education</a></li><li class="menu-list__item"><a role="menuitem" href="/elections/australian-elections.htm" class="ua-menu">Australian elections: A unique democracy</a></li></ul></div></div></div></li><li><a class="menu-links" href="javascript:void(0)" role="button" aria-haspopup="true" aria-expanded="false">Information centre</a><div class="sublinks container-fluid"><div class="row"><div class="col"><h3>Electoral divisions</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/electorate" class="ua-menu">Find my electoral division</a></li><li class="menu-list__item"><a role="menuitem" href="/profiles/" class="ua-menu">Current electoral divisions</a></li><li class="menu-list__item"><a role="menuitem" href="/Enrolling_to_vote/Enrolment_stats/" class="ua-menu">Enrolment statistics</a></li><li class="menu-list__item"><a role="menuitem" href="/Electorates/maps.htm" class="ua-menu">Maps and spatial data</a></li><li class="menu-list__item"><a role="menuitem" href="/Electorates/Redistributions/" class="ua-menu">Electoral division redistributions</a></li></ul></div><div class="col"><h3>Elections and events</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/Elections/federal_elections/2025/index.htm" class="ua-menu">2025 federal election</a></li><li class="menu-list__item"><a role="menuitem" href="https://results.aec.gov.au/" class="ua-menu">Past results</a></li><li class="menu-list__item"><a role="menuitem" href="/Elections/Federal_Elections/" class="ua-menu">Federal elections</a></li><li class="menu-list__item"><a role="menuitem" href="/Elections/supplementary_by_elections/" class="ua-menu">By-elections</a></li><li class="menu-list__item"><a role="menuitem" href="/Elections/referendums/" class="ua-menu">Referendums</a></li><li class="menu-list__item"><a role="menuitem" href="/ieb/" class="ua-menu">Industrial elections and ballots</a></li></ul></div><div class="col"><h3>Transparency and integrity</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/About_AEC/safeguarding.htm" class="ua-menu">Election safeguards</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/reputation-management.htm" class="ua-menu">Reputation Management System</a></li><li class="menu-list__item"><a role="menuitem" href="/Parties_and_Representatives/financial_disclosure/transparency-register/" class="ua-menu">Transparency Register</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/Publications/backgrounders/" class="ua-menu">Electoral Backgrounders</a></li></ul></div></div></div></li><li><a class="menu-links" href="javascript:void(0)" role="button" aria-haspopup="true" aria-expanded="false">The AEC</a><div class="sublinks container-fluid"><div class="row"><div class="col"><h3>Who we are</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/About_AEC/" class="ua-menu">The AEC's role</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/Publications/annual-report/" class="ua-menu">Annual reports</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/Publications/corporate-plan/index.htm" class="ua-menu">Corporate plan</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/Publications/" class="ua-menu">Publications</a></li></ul></div><div class="col"><h3>Work with us</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/employment/" class="ua-menu">AEC Careers</a></li><li class="menu-list__item"><a role="menuitem" href="https://candidate.aurion.cloud/aec/production/" class="ua-menu">Current vacancies</a></li><li class="menu-list__item"><a role="menuitem" href="/employment/graduates.htm" class="ua-menu">Graduate Program</a></li><li class="menu-list__item"><a role="menuitem" href="/working-at-elections" class="ua-menu">Working at elections</a></li></ul></div><div class="col"><h3>Talk to us</h3><ul class="menu-list"><li class="menu-list__item"><a role="menuitem" href="/contact" class="ua-menu">Contact us</a></li><li class="menu-list__item"><a role="menuitem" href="/media" class="ua-menu">AEC Newsroom</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/cea-notices/" class="ua-menu">Notices</a></li><li class="menu-list__item"><a role="menuitem" href="/About_AEC/business-with-us.htm" class="ua-menu">AEC procurement</a></li></ul></div></div></div></li></ul></div></nav></div></div>
+
+	<section class="banner banner--fancy">		
+		<div class="fancy__image">
+			<!-- InstanceBeginEditable name="youTubeOrImageOverride" -->
+			<!-- use css to override image -->
+			<!-- use <iframe class="video-embed" src="https://www.youtube-nocookie.com/embed/[INSERT CODE ONLY]?showinfo=0&rel=0&loop=0&controls=0" frameborder="0" allowfullscreen></iframe> to insert YouTube video over image change bannerClass to .banner--video in template -->
+			<!-- InstanceEndEditable -->
+			<div class="aec-polygon"></div>
+			<div class="container">
+				<div class="banner__heading">
+					<h1>404 - Sauce not found</h1>
+					<div class="lead">
+						<p>Don't worry, we're off to the shops to get more </p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+	<div class="container" id="contentstart" role="main">
+    <div class="row">
+        <div class="col-lg-9 order-2 order-lg-1" style="position: relative">
+	<div class="sr-only sr-title">404 - Sauce not found</div>
+	<!-- InstanceBeginEditable name="Breadcrumb" -->
+    <div id="breadcrumb">
+      <ul>
+        <li><a href="/">Home</a></li>
+      </ul>
+    </div>
+	<!-- InstanceEndEditable -->  
+	
+	<!-- InstanceBeginEditable name="Content" -->
+            <div class="alert alert-warning">
+            	
+				<p>The page you are looking for might have been removed, had its name changed, or is temporarily unavailable.</p>
+            </div>
+	<div class="seeAlsoBox">
+		
+			<div class="grey-search">
+            	<!--<script type="text/javascript">
+				function validateSearch(frm) {
+					var searchQuery = $("input[id=query]").val();
+					if ((!searchQuery)) {
+						$("input[id=query]").focus();
+						return false;
+					}
+					return true;
+				}
+				</script>
+                <form class="site-search" action="https://aec-search.clients.funnelback.com/s/search.html" method="get" onsubmit="return validateSearch();">
+                    <div class="input-group">
+                        <input type="hidden" class="hiddens" name="collection" value="aec">
+                        <input type="hidden" class="hiddens" name="form" value="simple">
+                        <input type="hidden" class="hiddens" name="profile" value="aec">
+                        <label for="query" class="visually-hidden">Search the AEC website</label>
+                        <input type="text" name="query" class="form-control" id="query" value="" placeholder="Search for...">                    
+                        <span class="input-group-btn">
+                        	<button class="btn btn-default" type="submit">Search</button>
+                        </span>
+                    </div>
+                </form>-->
+<script type="text/javascript">
+					function validateSearch(frm) {
+						var searchQuery = $("input[id=query]").val();
+						if ((!searchQuery)) {
+							$("input[id=query]").focus();
+							return false;
+						}
+						return true;
+					}
+				</script>
+				<div class="search-form" role="search">
+					<form action="https://aec-search.funnelback.squiz.cloud/s/search.html" method="get" onsubmit="return validateSearch();">
+						<div class="search-form__wrapper">
+							<input type="hidden" class="hiddens" name="collection" value="aec~sp-aec">
+							<input type="hidden" class="hiddens" name="form" value="simple">
+							<input type="hidden" class="hiddens" name="profile" value="aec">
+							<label for="query" class="visually-hidden">Search the AEC website</label>
+							<input type="text" name="query" class="search-form__input" id="query" value="" placeholder="What are you looking for?">                    
+							<div class="search-form__button">
+								<button type="submit" class="search-form__icon--button" value="Search"><i class="far fa-search" aria-hidden="true"></i><span class="visually-hidden">Search</span></button>
+							</div>
+						</div>
+					</form>
+				</div>
+
+			</div>
+            <ul class="linkList">
+              <li><a href="/index.htm">Go to the home page</a></li> 
+              <li><a href="javascript: history.go(-1)">Go back to the previous page</a></li>            
+            </ul>
+	</div>
+<!-- InstanceEndEditable -->
+	<!-- InstanceBeginEditable name="Lastupdate" -->
+    <div id="lastupdate"><strong>Updated:</strong> 25 December 2019</div>
+	<!-- InstanceEndEditable --> 
+	
+	
+	        </div>
+    	<!--<div class="col-xl-4">-->
+    		<!--include virtual="/_template/inc/sidebar.html" -->
+    	<!--</div>-->
+	</div>
+</div>
+
+    <!--START /_template/footer.html-->
+<!-- beginnoindex -->
+
+<div class="footer" role="contentinfo">
+	<div class="footer__wrapper">
+		<div class="container">
+            <div class="row">
+                <div class="col-12 col-lg-3 order-3 order-lg-1">
+                    <h5>Connect with us</h5>
+                    <div class="media-icons"> <a href="https://www.facebook.com/AusElectoralCom"><i class="fab fa-facebook" aria-hidden="true"></i><span class="visually-hidden">Facebook</span></a> <a href="https://twitter.com/AusElectoralCom"><i class="fab fa-x-twitter" aria-hidden="true"></i><span class="visually-hidden">Twitter</span></a> <a href="https://www.instagram.com/AusElectoralCom"><i class="fab fa-instagram" aria-hidden="true"></i><span class="visually-hidden">Instagram</span></a>
+                        <a href="https://www.threads.net/AusElectoralCom"><i class="fab fa-threads" aria-hidden="true"></i><span class="visually-hidden">Threads</span></a>  
+                        <a href="https://www.youtube.com/AECTV"><i class="fab fa-youtube" aria-hidden="true"></i> <span class="visually-hidden">YouTube</span></a> <a href="https://www.flickr.com/photos/auselectoralcom/albums"> <i class="fab fa-flickr" aria-hidden="true"></i><span class="visually-hidden">Flickr</span></a><a href="https://www.linkedin.com/company/australian-electoral-commission/"> <i class="fab fa-linkedin" aria-hidden="true"></i><span class="visually-hidden">LinkedIn</span></a><a href="https://www.tiktok.com/@auselectoralcom"> <i class="fab fa-tiktok" aria-hidden="true"></i><span class="visually-hidden">TikTok</span></a> </div>
+                </div>
+                <div class="col-6 col-lg-3 order-1 order-lg-2">
+                    <h5>Services</h5>
+                    <ul class="footer--list">                 
+                        <li><a href="/employment/">Work with us</a></li>
+                        <li><a href="/footer/fraud.htm">Fraud</a></li>
+                        <li><a href="/faqs/">FAQs</a></li>
+                        <li><a href="/footer/Glossary.htm">Glossary</a></li>
+                    </ul>
+                </div>
+                <div class="col-6 col-lg-3 order-2 order-lg-3">
+                    <h5>About</h5>
+                    <ul class="footer--list">
+                        <li><a href="/About_AEC/Contact_the_AEC/index.htm">Contact us</a></li>
+                        <li><a href="/footer/accessibility.htm">Accessibility</a></li>
+                        <li><a href="/privacy/">Privacy</a></li>
+                        <li><a href="/footer/security.htm">Security</a></li>
+                        <li><a href="/footer/Copyright.htm">Copyright</a></li>
+                        <li><a href="/footer/Disclaimer.htm">Disclaimer</a></li>
+                        <li><a href="/information-access/">Access&nbsp;to&nbsp;information</a></li>
+                    </ul>
+                </div>
+                <div class="col-6 col-lg-3 order-4 order-lg-4 d-none d-lg-block">
+                    <img src="/_template/css/img/logo-aec-white-42px.png" alt="AEC logo" title="AEC logo" class="float-end">
+                </div>
+            </div>
+            <p class="acknowledgement">The AEC acknowledges the Traditional Owners of country throughout Australia and recognises their continuing connection to land, waters, culture and community. We pay our respects to Elders past, present and&nbsp;emerging.</p>
+            <div class="footer__copyright">
+            <div class="row">
+				<div class="col-md-5">
+					<p class="text-uppercase">&copy; Australian Electoral Commission 2025</p>
+				</div>
+				<div class="col-md-7">
+					<p class="footer__authorised text-uppercase">Authorised by the Electoral Commissioner, Canberra</p>
+				</div>
+			</div>
+                </div>
+        </div>
+    </div>
+</div>
+<!-- endnoindex --> 
+<a href="#topPage" title="Back to top">
+<div class="back-top"><span class="visually-hidden">Back to top</span></div>
+</a> 
+<!--<script type="text/javascript" src="/_template/js/jquery-3.7.0.min.js"></script>-->
+<script type="text/javascript" src="/_template/js/jquery-3.7.0.min.js"></script> 
+<script type="text/javascript" src="/_template/js/jquery-migrate-3.4.1.js"></script>
+<script type="text/javascript" src="/_template/js/aec-main.min.js?v=1.3"></script>
+
+    <script type="text/javascript">
+//<!--
+window.rsConf = {
+	general: {usePost: true},
+	ui: {
+    	disableDetachment: true,
+    	tools: {
+			translation: false,
+			dictionary:false,
+			popupplayback:false
+		},
+  	},
+};
+//-->
+</script>
+<script src="//cdn1.readspeaker.com/script/8714/webReader/webReader.js?pids=wr" type="text/javascript"></script>
+<script type="text/javascript" src="/_template/js/bootstrap.min.js"></script> 
+
+<!--END /_template/footer.html-->
+
+    <!-- InstanceBeginEditable name="jsoverride" -->
+    <!-- override javascript -->
+    <!-- InstanceEndEditable -->
+</body>
+<!-- InstanceEnd --></html>

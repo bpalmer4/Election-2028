@@ -187,20 +187,33 @@ class RobustScraper:
             return None
     
     def save_data(self, data: Dict[str, str]) -> bool:
-        """Save data to CSV file."""
+        """Save data to CSV file with consistent format."""
         try:
-            # Convert to DataFrame
-            df = pd.DataFrame([data.keys(), data.values()], index=["variable", "value"]).T
+            # Convert to DataFrame with consistent column names
+            df = pd.DataFrame([data.keys(), data.values()], index=["Party", "Odds"]).T
             df.index = pd.DatetimeIndex([pd.Timestamp.now()] * len(df))
-            df.index.name = "datetime"
+            df.index.name = "Datetime"
             
             # Ensure directory exists
             file_dir = "../betting-data"
             Path(file_dir).mkdir(parents=True, exist_ok=True)
             file_path = f"{file_dir}/sportsbet-2028-election-winner.csv"
             
+            # Check if file exists and has data
+            file_exists = Path(file_path).exists()
+            write_header = not file_exists
+            
+            if file_exists:
+                # Check if file is empty or has inconsistent format
+                try:
+                    existing_df = pd.read_csv(file_path, nrows=1)
+                    if len(existing_df.columns) < 3 or 'Party' not in existing_df.columns:
+                        write_header = True
+                except:
+                    write_header = True
+            
             # Save to file
-            df.to_csv(file_path, mode="a", index=True, header=False)
+            df.to_csv(file_path, mode="a", index=True, header=write_header)
             
             logger.info(f"Data saved to {file_path}")
             return True
