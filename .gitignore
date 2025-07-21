@@ -15,5 +15,12 @@ __pycache__/
 charts/**
 data/**
 model-images/**
-automated/**
 notebooks/grave-yard/**
+CLAUDE.md
+
+# Automated directory - ignore sensitive files only
+automated/.env
+automated/*.env
+automated/*.log
+automated/logs/
+automated/old
