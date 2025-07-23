@@ -3,562 +3,782 @@
 Scrape Australian federal election polling data from Wikipedia.
 
 This script scrapes polling data from Wikipedia pages for opinion polling
-on Australian federal elections, focusing on voting intention and 
+on Australian federal elections, focusing on voting intention and
 preferred Prime Minister data.
 """
 
 import re
 import logging
-from datetime import datetime, timedelta
+import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass
+from io import StringIO
 import pandas as pd
+import numpy as np
 import requests
-from bs4 import BeautifulSoup, Tag
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from bs4 import BeautifulSoup
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+# --- UTILITY FUNCTIONS ---
+
+def ensure(condition: bool, message: str = "Assertion failed") -> None:
+    """Simple assertion function that raises an exception if condition is False."""
+    if not condition:
+        raise AssertionError(message)
+
+
+# --- URL HANDLING FUNCTIONS ---
+
+
+def create_session_with_retry() -> requests.Session:
+    """Create a requests session with retry logic."""
+    session = requests.Session()
+
+    # Configure retry strategy
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "OPTIONS"],
+    )
+
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
+    # Set default headers
+    session.headers.update(
+        {
+            "Cache-Control": "no-cache, must-revalidate, private, max-age=0",
+            "Pragma": "no-cache",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        }
+    )
+
+    return session
+
+
+def get_url(url: str, session: requests.Session | None = None) -> str:
+    """Get the text found at a URL."""
+    if session is None:
+        session = create_session_with_retry()
+
+    timeout = 15  # seconds
+    try:
+        response = session.get(url, timeout=timeout)
+        ensure(
+            response.status_code in (200, 201, 202, 204),
+            f"Failed to retrieve URL: {response.status_code}",
+        )  # successful retrieval
+        return response.text
+    except requests.exceptions.RequestException as e:
+        logger.error("Failed to fetch URL %s: %s", url, e)
+        raise
+
+
+def get_table_list(
+    url: str, session: requests.Session | None = None
+) -> list[pd.DataFrame]:
+    """Return a list of tables found at a URL. Tables are returned in pandas DataFrame format."""
+    html = get_url(url, session)
+    df_list = pd.read_html(StringIO(html))
+    ensure(
+        len(df_list) > 0, "No tables found at URL"
+    )  # check we have at least one table
+    return df_list
+
+
+def flatten_col_names(columns: pd.Index) -> list[str]:
+    """Flatten the hierarchical column index."""
+    ensure(columns.nlevels >= 2, "Column index must have at least 2 levels")
+    flatter = [
+        " ".join(col).strip() if col[0] != col[1] else col[0] for col in columns.values
+    ]
+    pattern = re.compile(r"\[.+\]")
+    flat = [re.sub(pattern, "", s) for s in flatter]  # remove footnotes
+    return flat
+
+
+def get_combined_table(
+    df_list: list[pd.DataFrame],
+    table_list: list[int] | None = None,
+    verbose: bool = False,
+) -> pd.DataFrame | None:
+    """Get selected tables (by int in table_list) from Wikipedia page.
+    Return a single merged table for the selected tables."""
+
+    # --- sanity check
+    if table_list is None or not table_list:
+        if verbose:
+            logger.debug("No tables selected.")
+        return None
+
+    combined: pd.DataFrame | None = None
+    for table_num in table_list:
+        if table_num >= len(df_list):
+            logger.warning(
+                "Table %d not found (only %d tables available)", table_num, len(df_list)
+            )
+            continue
+        table = df_list[table_num].copy()
+        if verbose:
+            logger.debug("Table %d preview:\n%s", table_num, table.head())
+        flat = flatten_col_names(table.columns)
+        table.columns = pd.Index(flat)
+        if combined is None:
+            combined = table
+        else:
+            table_set = set(table.columns)
+            combined_set = set(combined.columns)
+            problematic = table_set.difference(combined_set)
+            if problematic:
+                logger.warning(
+                    "With table %d, %s not in combined table.", table_num, problematic
+                )
+            combined = pd.concat((combined, table), ignore_index=True)
+
+    return combined
+
+
+# --- DATE PARSING FUNCTIONS ---
+
+# Date parsing constants
+ENDASH = "\u2013"
+EMDASH = "\u2014"
+HYPHEN = "\u002d"
+MINUS = "\u2212"
+COMMA = "\u002c"
+SLASH = "\u002f"
+NON_BREAKING_SPACE = "\u00a0"
+
+MONTHS = {
+    "jan": "01",
+    "feb": "02",
+    "mar": "03",
+    "apr": "04",
+    "may": "05",
+    "jun": "06",
+    "jul": "07",
+    "aug": "08",
+    "sep": "09",
+    "oct": "10",
+    "nov": "11",
+    "dec": "12",
+}
+
+
+@dataclass
+class StringDateItems:
+    """Data class to hold string date components."""
+
+    day: str
+    month: str
+    year: str
+
+
+def numericise(value: str) -> str:
+    """Convert specific string values to rough numeric equivalents."""
+    fixes = {"early": "5", "mid": "15", "late": "25"}
+    return fixes.get(value, value)
+
+
+def parse_date_component(
+    date: str, month: str = "", year: str = ""
+) -> StringDateItems | None:
+    """Parse a date string into StringDateItems."""
+    if not date:
+        return None
+
+    components = date.split()
+    if len(components) > 3 or len(components) < 1:
+        logger.debug("Date should be in the format 'day month year'.")
+        return None
+
+    components[0] = numericise(components[0].strip())
+    if len(components) == 1:
+        components = [components[0], month, year]
+
+    if len(components) == 2 and components[0].isalpha():
+        components = [components[1], components[0], year]
+
+    if len(components) == 2:
+        components = [components[0], components[1], year]
+
+    if len(components) == 3 and components[0].isalpha():
+        components = [components[1], components[0], components[2]]
+
+    if (
+        len(components) == 3
+        and components[0].isdigit()
+        and int(components[0]) > 31
+        and components[2].isdigit()
+        and int(components[2]) <= 31
+    ):
+        components = [components[2], components[1], components[0]]
+
+    components[0] = numericise(components[0].strip())
+    return StringDateItems(day=components[0], month=components[1], year=components[2])
+
+
+def validate_date(sd: StringDateItems) -> StringDateItems | None:
+    """Validate the date components."""
+    # Validate year with better error messages
+    if not sd.year:
+        logger.debug("Date validation failed: missing year component")
+        return None
+    if not sd.year.isdigit():
+        logger.debug("Date validation failed: year '%s' is not numeric", sd.year)
+        return None
+
+    try:
+        y = int(sd.year)
+        if y <= 99:
+            sd.year = f"20{sd.year}" if y < 30 else f"19{sd.year}"
+            y = int(sd.year)
+        if y < 2020 or y > 2030:  # Broader range for polling data
+            logger.debug(
+                "Date validation failed: year %d outside expected range (2020-2030)", y
+            )
+            return None
+        year = f"{y:04d}"
+    except ValueError as e:
+        logger.debug(
+            "Date validation failed: cannot convert year '%s' to integer: %s",
+            sd.year,
+            e,
+        )
+        return None
+
+    # Validate month with better error messages
+    try:
+        if sd.month.isdigit():
+            m = int(sd.month)
+            if 1 <= m <= 12:
+                rmonths = {int(v): k for k, v in MONTHS.items()}
+                sd.month = rmonths[m]
+            else:
+                logger.debug(
+                    "Date validation failed: numeric month %d outside range 1-12", m
+                )
+                return None
+
+        month = sd.month[:3].lower()
+        if month not in MONTHS:
+            logger.debug(
+                "Date validation failed: month '%s' not recognized (expected: %s)",
+                sd.month,
+                list(MONTHS.keys()),
+            )
+            return None
+    except (ValueError, AttributeError) as e:
+        logger.debug(
+            "Date validation failed: error processing month '%s': %s", sd.month, e
+        )
+        return None
+
+    # Validate day with better error messages
+    days = {
+        "jan": 31,
+        "feb": 28,
+        "mar": 31,
+        "apr": 30,
+        "may": 31,
+        "jun": 30,
+        "jul": 31,
+        "aug": 31,
+        "sep": 30,
+        "oct": 31,
+        "nov": 30,
+        "dec": 31,
+    }
+
+    try:
+        # Check for leap year
+        if (
+            month == "feb"
+            and int(year) % 4 == 0
+            and (int(year) % 100 != 0 or int(year) % 400 == 0)
+        ):
+            days["feb"] = 29
+
+        if not sd.day.isdigit():
+            logger.debug("Date validation failed: day '%s' is not numeric", sd.day)
+            return None
+
+        d = int(sd.day)
+        if d < 1 or d > days[month]:
+            logger.debug(
+                "Date validation failed: day %d invalid for %s (max: %d)",
+                d,
+                month,
+                days[month],
+            )
+            return None
+        day = f"{d:02d}"
+    except (ValueError, KeyError) as e:
+        logger.debug(
+            "Date validation failed: error processing day '%s' for month '%s': %s",
+            sd.day,
+            month,
+            e,
+        )
+        return None
+
+    return StringDateItems(day=day, month=month, year=year)
+
+
+def improved_parse_date_range(date: str) -> datetime.date | None:
+    """Parse a date string into a date object using improved parsing."""
+    if not date:
+        return None
+
+    date = date.strip().lower()
+
+    # Check for ISO date format and convert to D M Y format
+    iso = r"(\d{4})-(\d{2})-(\d{2})"
+    while groups := re.search(iso, date):
+        year, month, day = groups.groups()
+        replacement = f"{day} {month} {year}"
+        date = re.sub(iso, replacement, date, count=1)
+
+    # Fix common issues with date strings
+    fix_dict = {
+        COMMA: " ",
+        SLASH: " ",
+        NON_BREAKING_SPACE: " ",
+        ENDASH: "-",
+        EMDASH: "-",
+        HYPHEN: "-",
+        MINUS: "-",
+    }
+    for fix, replacement in fix_dict.items():
+        date = date.replace(fix, replacement)
+
+    date = date.replace("--", "-")
+    date_list = date.split("-")
+    if len(date_list) > 2 or len(date_list) < 1:
+        logger.debug("Malformed date: %s", date)
+        return None
+
+    # Parse the back date
+    back_date = parse_date_component(date_list[-1])
+    if back_date is None:
+        logger.debug("Malformed date: %s", date)
+        return None
+
+    back_date = validate_date(back_date)
+    if back_date is None:
+        logger.debug("Invalid date: %s", date)
+        return None
+
+    # Convert to datetime
+    try:
+        last_dt = datetime.date(
+            int(back_date.year), int(MONTHS[back_date.month]), int(back_date.day)
+        )
+    except (ValueError, KeyError) as e:
+        logger.debug("Failed to create datetime: %s", e)
+        return None
+
+    if len(date_list) == 1:
+        return last_dt
+
+    front_date = parse_date_component(
+        date_list[0], month=back_date.month, year=back_date.year
+    )
+    if front_date is None:
+        logger.debug("Malformed date: %s", date)
+        return None
+
+    front_date = validate_date(front_date)
+    if front_date is None:
+        logger.debug("Invalid date: %s", date)
+        return None
+
+    try:
+        first_dt = datetime.date(
+            int(front_date.year), int(MONTHS[front_date.month]), int(front_date.day)
+        )
+    except (ValueError, KeyError) as e:
+        logger.debug("Failed to create datetime: %s", e)
+        return None
+
+    if first_dt > last_dt:
+        logger.debug("Invalid date range: %s", date)
+        return None
+
+    # Return the midpoint
+    midpoint = first_dt + (last_dt - first_dt) / 2
+    return midpoint
+
 
 class WikipediaPollingScaper:
     """Scraper for Australian federal election polling data from Wikipedia."""
     
+    # Data validation thresholds
+    PRIMARY_VOTE_LOWER = 97
+    PRIMARY_VOTE_UPPER = 103
+    TPP_VOTE_LOWER = 99
+    TPP_VOTE_UPPER = 101
+    NORMALISATION_LOWER = 99.9
+    NORMALISATION_UPPER = 100.1
+
     def __init__(self, election_year: str = "next"):
-        if election_year == "next":
-            self.url = "https://en.wikipedia.org/wiki/Opinion_polling_for_the_next_Australian_federal_election"
-        else:
-            self.url = f"https://en.wikipedia.org/wiki/Opinion_polling_for_the_{election_year}_Australian_federal_election"
-        
+        self.url = f"https://en.wikipedia.org/wiki/Opinion_polling_for_the_{election_year}_Australian_federal_election"
         self.election_year = election_year
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-        })
-        
+        self.session = create_session_with_retry()
+
     def fetch_page(self) -> BeautifulSoup:
         """Fetch and parse the Wikipedia page."""
         try:
-            response = self.session.get(self.url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
-            logger.info(f"Successfully fetched Wikipedia page for {self.election_year}")
+            html = get_url(self.url, self.session)
+            soup = BeautifulSoup(html, "html.parser")
+            logger.info(
+                "Successfully fetched Wikipedia page for %s", self.election_year
+            )
             return soup
-        except requests.RequestException as e:
-            logger.error(f"Failed to fetch Wikipedia page: {e}")
-            raise
-    
-    def parse_date_range(self, date_str: str) -> Optional[datetime]:
-        """
-        Parse date ranges and return the midpoint date.
-        Handles formats like:
-        - "13–18 Jul 2025" -> midpoint between 13 Jul and 18 Jul
-        - "Jul 13–18, 2025" -> midpoint between Jul 13 and Jul 18
-        - "13 Jul 2025" -> exact date
-        """
-        if not date_str or date_str.strip() == '':
-            return None
-            
-        # Clean up the date string
-        date_str = date_str.strip().replace('\u00a0', ' ')
-        
-        # Handle various date range formats
-        range_patterns = [
-            # "13–18 Jul 2025" or "13-18 Jul 2025" 
-            r'(\d{1,2})\s*[–\-—]\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})',
-            # "Jul 13–18, 2025" or "July 13-18, 2025"
-            r'([A-Za-z]+)\s+(\d{1,2})\s*[–\-—]\s*(\d{1,2}),?\s+(\d{4})',
-            # "13 Jul–18 Aug 2025" (cross-month ranges)
-            r'(\d{1,2})\s+([A-Za-z]+)\s*[–\-—]\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})',
-            # "28 Apr – 2 May 2025" (cross-month with spaces)
-            r'(\d{1,2})\s+([A-Za-z]+)\s*[–\-—]\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})',
-        ]
-        
-        for pattern in range_patterns:
-            match = re.search(pattern, date_str)
-            if match:
-                groups = match.groups()
-                
-                if len(groups) == 4:
-                    if groups[0].isdigit():  # Pattern 1: "13–18 Jul 2025"
-                        start_day, end_day, month, year = groups
-                        start_date = self.parse_single_date(f"{start_day} {month} {year}")
-                        end_date = self.parse_single_date(f"{end_day} {month} {year}")
-                    else:  # Pattern 2: "Jul 13–18, 2025"
-                        month, start_day, end_day, year = groups
-                        start_date = self.parse_single_date(f"{start_day} {month} {year}")
-                        end_date = self.parse_single_date(f"{end_day} {month} {year}")
-                        
-                elif len(groups) == 5:  # Pattern 3: "13 Jul–18 Aug 2025"
-                    start_day, start_month, end_day, end_month, year = groups
-                    start_date = self.parse_single_date(f"{start_day} {start_month} {year}")
-                    end_date = self.parse_single_date(f"{end_day} {end_month} {year}")
-                
-                if start_date and end_date:
-                    # Calculate midpoint
-                    midpoint = start_date + (end_date - start_date) / 2
-                    logger.debug(f"Parsed date range '{date_str}' -> midpoint: {midpoint.strftime('%Y-%m-%d')}")
-                    return midpoint
-        
-        # If no range pattern matched, try parsing as single date
-        single_date = self.parse_single_date(date_str)
-        if single_date:
-            logger.debug(f"Parsed single date '{date_str}' -> {single_date.strftime('%Y-%m-%d')}")
-            return single_date
-        
-        logger.warning(f"Could not parse date: '{date_str}'")
-        return None
-    
-    def parse_single_date(self, date_str: str) -> Optional[datetime]:
-        """Parse a single date in various formats."""
-        if not date_str:
-            return None
-        
-        # Handle approximate date formats like "Late June 2025"
-        approx_patterns = [
-            (r'late\s+(\w+)\s+(\d{4})', lambda m: self._parse_late_month(m.group(1), int(m.group(2)))),
-            (r'early\s+(\w+)\s+(\d{4})', lambda m: self._parse_early_month(m.group(1), int(m.group(2)))),
-            (r'mid\s+(\w+)\s+(\d{4})', lambda m: self._parse_mid_month(m.group(1), int(m.group(2)))),
-        ]
-        
-        for pattern, parser in approx_patterns:
-            match = re.search(pattern, date_str.lower())
-            if match:
-                try:
-                    return parser(match)
-                except:
-                    continue
-            
-        # Common date formats
-        date_formats = [
-            '%d %b %Y',      # 18 Jul 2025
-            '%d %B %Y',      # 18 July 2025
-            '%b %d, %Y',     # Jul 18, 2025
-            '%B %d, %Y',     # July 18, 2025
-            '%Y-%m-%d',      # 2025-07-18
-            '%d/%m/%Y',      # 18/07/2025
-            '%d %b',         # 18 Jul (assume current year)
-            '%b %d',         # Jul 18 (assume current year)
-        ]
-        
-        for fmt in date_formats:
-            try:
-                parsed_date = datetime.strptime(date_str, fmt)
-                # If no year specified, assume current year
-                if parsed_date.year == 1900:
-                    parsed_date = parsed_date.replace(year=datetime.now().year)
-                return parsed_date
-            except ValueError:
-                continue
-                
-        return None
-    
-    def _parse_late_month(self, month_name: str, year: int) -> datetime:
-        """Parse 'Late Month Year' to last week of the month."""
-        month_map = {
-            'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3,
-            'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6,
-            'july': 7, 'jul': 7, 'august': 8, 'aug': 8, 'september': 9, 'sep': 9,
-            'october': 10, 'oct': 10, 'november': 11, 'nov': 11, 'december': 12, 'dec': 12
-        }
-        month_num = month_map.get(month_name.lower())
-        if month_num:
-            # Use 25th as approximation for "late month"
-            return datetime(year, month_num, 25)
-        raise ValueError(f"Unknown month: {month_name}")
-    
-    def _parse_early_month(self, month_name: str, year: int) -> datetime:
-        """Parse 'Early Month Year' to first week of the month."""
-        month_map = {
-            'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3,
-            'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6,
-            'july': 7, 'jul': 7, 'august': 8, 'aug': 8, 'september': 9, 'sep': 9,
-            'october': 10, 'oct': 10, 'november': 11, 'nov': 11, 'december': 12, 'dec': 12
-        }
-        month_num = month_map.get(month_name.lower())
-        if month_num:
-            # Use 5th as approximation for "early month"
-            return datetime(year, month_num, 5)
-        raise ValueError(f"Unknown month: {month_name}")
-    
-    def _parse_mid_month(self, month_name: str, year: int) -> datetime:
-        """Parse 'Mid Month Year' to middle of the month."""
-        month_map = {
-            'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3,
-            'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6,
-            'july': 7, 'jul': 7, 'august': 8, 'aug': 8, 'september': 9, 'sep': 9,
-            'october': 10, 'oct': 10, 'november': 11, 'nov': 11, 'december': 12, 'dec': 12
-        }
-        month_num = month_map.get(month_name.lower())
-        if month_num:
-            # Use 15th as approximation for "mid month"
-            return datetime(year, month_num, 15)
-        raise ValueError(f"Unknown month: {month_name}")
-    
-    def extract_percentage(self, text: str) -> Optional[float]:
-        """Extract percentage value from text."""
-        if not text:
-            return None
-            
-        # Remove non-breaking spaces and clean up
-        text = text.replace('\u00a0', ' ').strip()
-        
-        # Look for percentage pattern
-        match = re.search(r'(\d+(?:\.\d+)?)%?', text)
-        if match:
-            try:
-                return float(match.group(1))
-            except ValueError:
-                pass
-                
-        return None
-    
-    def identify_table_type(self, table: Tag) -> Optional[str]:
-        """Identify if table contains voting intention or preferred PM data."""
-        # Look at table headers and nearby headings
-        table_text = table.get_text().lower()
-        
-        # Check preceding headings
-        prev_elements = []
-        current = table
-        for _ in range(5):  # Look back 5 elements
-            current = current.find_previous_sibling()
-            if current is None:
-                break
-            if current.name in ['h2', 'h3', 'h4']:
-                prev_elements.append(current.get_text().lower())
-        
-        combined_text = ' '.join(prev_elements) + ' ' + table_text
-        
-        if 'preferred prime minister' in combined_text or 'preferred pm' in combined_text:
-            return 'preferred_pm'
-        elif 'voting intention' in combined_text or 'primary vote' in combined_text:
-            return 'voting_intention'
-        elif any(party in table_text for party in ['alp', 'labor', 'liberal', 'coalition']):
-            # Default to voting intention if it has party data
-            return 'voting_intention'
-        
-        return None
-    
-    def find_polling_tables(self, soup: BeautifulSoup) -> List[Tuple[Tag, str]]:
-        """Find the main national voting intention table."""
-        tables = []
-        
-        # Look for the first voting intention table which should be the national one
-        for table in soup.find_all('table', class_='wikitable'):
-            table_type = self.identify_table_type(table)
-            if table_type == 'voting_intention':
-                # Check if this table has the full column structure we expect
-                try:
-                    df_list = pd.read_html(str(table), header=[0, 1])
-                    if df_list:
-                        df = df_list[0]
-                        # Check for key columns that indicate this is the main national table
-                        all_text = str(df.columns).lower()
-                        if 'primary vote' in all_text and 'alp' in all_text and '2pp' in all_text:
-                            # Additional check: ensure this is the main national table by checking preceding headings
-                            prev_headings = []
-                            current = table
-                            for _ in range(3):
-                                current = current.find_previous_sibling()
-                                if current is None:
-                                    break
-                                if current.name in ['h2', 'h3']:
-                                    prev_headings.append(current.get_text().lower())
-                            
-                            heading_text = ' '.join(prev_headings)
-                            # Skip state-specific or non-national tables
-                            if any(state in heading_text for state in ['queensland', 'nsw', 'victoria', 'western australia', 'south australia', 'tasmania', 'act', 'nt', 'by state', 'state-by-state']):
-                                logger.debug(f"Skipping state-specific table under heading: {heading_text}")
-                                continue
-                            
-                            logger.info(f"Found main national voting intention table with heading context: {heading_text}")
-                            tables.append((table, table_type))
-                            break  # Only take the first/main table
-                except Exception as e:
-                    logger.debug(f"Error processing table: {e}")
-                    continue
-                    
-        logger.info(f"Selected {len(tables)} main polling table")
-        return tables
-    
-    def extract_table_data(self, table: Tag, table_type: str) -> List[Dict]:
-        """Extract polling data using pandas to handle multiindex columns."""
-        try:
-            # Convert HTML table to pandas DataFrame with multiindex columns
-            df_list = pd.read_html(str(table), header=[0, 1])
-            if not df_list:
-                logger.warning("No tables found by pandas")
-                return []
-            
-            df = df_list[0]  # Take the first table
-            logger.debug(f"Pandas found table with shape: {df.shape}")
-            
-            # Handle multiindex columns by flattening them
-            if isinstance(df.columns, pd.MultiIndex):
-                # Combine multiindex levels, removing empty parts
-                new_columns = []
-                for col in df.columns:
-                    # Join non-empty parts of the column name
-                    parts = [str(part).strip() for part in col if str(part).strip() and str(part) != 'Unnamed']
-                    combined = ' '.join(parts)
-                    # Remove footnote references
-                    combined = re.sub(r'\[[a-z0-9]+\]', '', combined).strip()
-                    new_columns.append(combined)
-                df.columns = new_columns
-            else:
-                # Clean single-level columns
-                df.columns = [re.sub(r'\[[a-z0-9]+\]', '', str(col)).strip() for col in df.columns]
-            
-            logger.debug(f"Cleaned columns: {list(df.columns)}")
-            
-            # Look specifically for UND/Undecided patterns
-            und_columns = [col for col in df.columns if 'und' in col.lower() or 'undecided' in col.lower()]
-            logger.info(f"UND-related columns found: {und_columns}")
-            
-            # Debug: show all columns for first table with UND
-            if und_columns:
-                logger.info(f"All columns in table with UND: {list(df.columns)}")
-            
-            # Filter out informational rows (rows without valid dates)
-            rows = []
-            for idx, row in df.iterrows():
-                try:
-                    # Check if first column looks like a date
-                    date_text = str(row.iloc[0]).strip()
-                    if not date_text or date_text.lower() in ['nan', 'none', '']:
-                        continue
-                    
-                    # Try to parse the date
-                    date_parsed = self.parse_date_range(date_text)
-                    if date_parsed is None:
-                        continue
-                    
-                    # Build row data
-                    row_data = {
-                        'original_date': date_text,  # Keep original date string
-                        'date': date_parsed,         # Parsed/standardized date
-                        'table_type': table_type,
-                        'source': f'wikipedia_{self.election_year}'
-                    }
-                    
-                    # Map columns to data (flexible matching)
-                    for col_name in df.columns:
-                        col_lower = col_name.lower()
-                        cell_value = str(row[col_name]).strip()
-                        
-                        # Skip empty/nan values
-                        if not cell_value or cell_value.lower() in ['nan', 'none', '']:
-                            continue
-                        
-                        # Map to appropriate fields
-                        if 'brand' in col_lower:
-                            # Remove footnote references from brand/firm names
-                            clean_brand = re.sub(r'\[[a-z0-9]+\]', '', cell_value).strip()
-                            row_data['brand'] = clean_brand
-                        elif 'interview' in col_lower and 'mode' in col_lower:
-                            # Remove footnote references from interview mode
-                            clean_mode = re.sub(r'\[[a-z0-9]+\]', '', cell_value).strip()
-                            row_data['interview_mode'] = clean_mode
-                        elif 'sample' in col_lower:
-                            # Remove footnote references from sample size  
-                            clean_sample = re.sub(r'\[[a-z0-9]+\]', '', cell_value).strip()
-                            row_data['sample_size'] = clean_sample
-                        elif 'primary' in col_lower and 'alp' in col_lower:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                row_data['primary_alp'] = pct
-                        elif 'primary' in col_lower and ('l/np' in col_lower or 'lnp' in col_lower):
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                row_data['primary_lnp'] = pct
-                        elif 'primary' in col_lower and 'grn' in col_lower:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                row_data['primary_grn'] = pct
-                        elif 'primary' in col_lower and 'onp' in col_lower:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                row_data['primary_onp'] = pct
-                        elif 'primary' in col_lower and 'ind' in col_lower:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                row_data['primary_ind'] = pct
-                        elif 'primary' in col_lower and 'oth' in col_lower:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                row_data['primary_oth'] = pct
-                        elif ('primary' in col_lower and 'und' in col_lower) or col_lower == 'primary vote und':
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                row_data['primary_und'] = pct
-                        elif '2pp' in col_lower and 'alp' in col_lower:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                row_data['2pp_alp'] = pct
-                        elif '2pp' in col_lower and ('l/np' in col_lower or 'lnp' in col_lower):
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                row_data['2pp_lnp'] = pct
-                        # Simple party name columns (for when party names are individual columns)
-                        elif col_lower in ['alp', 'labor'] and len(row_data) > 3:  # Assume it's vote data
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                if '2pp_alp' not in row_data:  # Prefer explicit 2pp columns
-                                    row_data['vote_alp'] = pct
-                        elif col_lower in ['l/np', 'lnp', 'coalition'] and len(row_data) > 3:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                if '2pp_lnp' not in row_data:
-                                    row_data['vote_lnp'] = pct
-                        elif col_lower == 'grn' and len(row_data) > 3:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                if 'primary_grn' not in row_data:
-                                    row_data['primary_grn'] = pct
-                        elif col_lower == 'onp' and len(row_data) > 3:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                if 'primary_onp' not in row_data:
-                                    row_data['primary_onp'] = pct
-                        elif col_lower == 'ind' and len(row_data) > 3:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                if 'primary_ind' not in row_data:
-                                    row_data['primary_ind'] = pct
-                        elif col_lower == 'oth' and len(row_data) > 3:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                if 'primary_oth' not in row_data:
-                                    row_data['primary_oth'] = pct
-                        elif (col_lower == 'und' or col_lower == 'undecided') and len(row_data) > 3:
-                            pct = self.extract_percentage(cell_value)
-                            if pct is not None:
-                                if 'primary_und' not in row_data:
-                                    row_data['primary_und'] = pct
-                    
-                    # Skip election results (not polling data)
-                    if 'brand' in row_data and row_data['brand'].lower() in ['election', 'election result']:
-                        logger.debug(f"Skipping election result row: {row_data.get('date', 'no date')}")
-                        continue
-                    
-                    # Only keep rows with meaningful polling data
-                    polling_fields = ['primary_alp', 'primary_lnp', 'primary_grn', 'primary_onp', 
-                                    'primary_ind', 'primary_oth', 'primary_und', '2pp_alp', '2pp_lnp', 
-                                    'vote_alp', 'vote_lnp']
-                    if any(field in row_data for field in polling_fields):
-                        rows.append(row_data)
-                
-                except Exception as e:
-                    logger.debug(f"Skipping row {idx}: {e}")
-                    continue
-            
-            logger.info(f"Extracted {len(rows)} polling entries from {table_type} table using pandas")
-            return rows
-            
         except Exception as e:
-            logger.error(f"Failed to extract table data with pandas: {e}")
-            return []
-    
-    def scrape_polls(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
+            logger.error("Failed to fetch Wikipedia page: %s", e)
+            raise
+
+    def get_polling_table_indices(
+        self, df_list: list[pd.DataFrame], must_have: list[str] | None = None
+    ) -> list[int] | None:
+        """Get indices of tables that are likely to contain polling data matching the specified patterns.
+
+        Args:
+            df_list: List of DataFrames from Wikipedia page
+            must_have: List of patterns that must be present in column names (default: ["primary", "2pp"])
+
+        Assumptions:
+        - There may be some initial tables that are a prelude or introduction, and they should be skipped.
+        - The next few tables are likely to be national polling data, and should be captured.
+        - There will be subsequent tables that are state-specific or attitudinal polling, and should be skipped
+        """
+
+        table_indices: list[int] = []
+        prelude = True
+        if must_have is None:
+            must_have = ["primary", "2pp"]
+        for i, df in enumerate(df_list):
+            # --- does this look like polling data?
+            skip = False
+            if not isinstance(df.columns, pd.MultiIndex):
+                # expectation: polls will have multiindex columns
+                skip = True
+            else:
+                level_0 = df.columns.get_level_values(0).str.lower()
+                for check in must_have:
+                    if not any(check in label for label in level_0):
+                        skip = True
+            if skip and prelude:
+                continue  # skip any prelude tables
+            if skip and not prelude:
+                break  # we have finished collecting national voting intention tables
+
+            # --- keep this table
+            prelude = False
+            table_indices.append(i)
+            logger.info("Auto-selected table %d as a polling table", i)
+
+        if not table_indices:
+            logger.warning(
+                "Could not automatically identify any national voting intention polling tables"
+            )
+            return None
+
+        return table_indices
+
+    def get_tables_simple(
+        self, table_indices: list[int] | None = None, must_have: list[str] | None = None
+    ) -> pd.DataFrame | None:
+        """Get national polling tables using the simple approach with manual table selection."""
+        try:
+            df_list = get_table_list(self.url, self.session)
+            logger.info("Found %d tables on Wikipedia page", len(df_list))
+            table_indices = (
+                self.get_polling_table_indices(df_list, must_have)
+                if table_indices is None
+                else table_indices
+            )
+            return get_combined_table(df_list, table_indices, verbose=True)
+
+        except Exception as e:
+            logger.error("Failed to get tables: %s", e)
+            return None
+
+
+    def check_completeness(self, pattern: str, lower: int, upper: int, df: pd.DataFrame) -> pd.DataFrame:
+        """Check completeness of polling data in columns selected for matching pattern"""
+
+        columns = pd.Index(c for c in df.columns if pattern.lower() in c.lower() and "net" not in c.lower())
+        if len(columns) == 0:
+            logger.warning("No columns found matching pattern '%s'", pattern)
+            return df
+        
+        add_check = df[columns].sum(axis=1, skipna=True)
+        
+        # Only check completeness for rows that have actual data (not all NaN)
+        has_data = df[columns].notna().any(axis=1)
+        
+        problematic = (add_check < lower) | (add_check > upper)
+        # Only flag rows as problematic if they have data AND are outside range
+        problematic = problematic & has_data
+        
+        if problematic.any():
+            logger.warning(
+                "Found %d rows with sum outside range [%d, %d] for pattern '%s'",
+                problematic.sum(),
+                lower,
+                upper,
+                pattern,
+            )
+            df.loc[problematic, columns] = np.nan  # Set problematic rows to NaN
+        return df.copy()
+
+    def distribute_undecideds(self, und_pattern: str, col_pattern: str, df: pd.DataFrame) -> pd.DataFrame:
+        """Distribute undecided votes across vote columns."""
+
+        und_cols = [c for c in df.columns if und_pattern.lower() in c.lower() and col_pattern.lower() in c.lower()]
+        if len(und_cols) != 1:
+            logger.warning(
+                "No unique undecided columns found matching pattern '%s' and column pattern '%s'", 
+                und_pattern, col_pattern
+            )
+            return df
+        
+        und_col = und_cols[0]
+        und_rows = df[und_col].notna() & (df[und_col] != 0)  # Rows where undecided column is not NaN and not zero
+        if not und_rows.any():
+            logger.warning("No undecided votes found in column '%s'", und_col)
+            return df
+        columns = [c for c in df.columns if col_pattern.lower() in c.lower() and c != und_col]
+        if not columns:
+            logger.warning("No columns found matching pattern '%s'", col_pattern)
+            return df 
+        
+        row_sums = df[columns].sum(axis=1, skipna=True)
+
+        # redistribute - where appropriate
+        for col in columns:
+            df.loc[und_rows, col] += (df.loc[und_rows, col] / row_sums[und_rows]) * df.loc[und_rows, und_col]
+        return df.copy()
+
+    def normalise_poll_data(self, df: pd.DataFrame, pattern: str) -> pd.DataFrame:
+        """Normalise polling data by ensuring all columns matching the pattern sum to 100%."""
+
+        columns = pd.Index(c for c in df.columns if pattern.lower() in c.lower() and "net" not in c.lower())
+        if len(columns) == 0:
+            logger.warning("No columns found matching pattern '%s'", pattern)
+            return df
+
+        row_sums = df[columns].sum(axis=1, skipna=True)
+        
+        # Only normalize rows that have actual data (not all NaN)
+        has_data = df[columns].notna().any(axis=1)
+        problematic = (row_sums < self.NORMALISATION_LOWER) | (row_sums > self.NORMALISATION_UPPER)
+        # Only normalize rows that have data AND are outside range
+        problematic = problematic & has_data
+        
+
+        if problematic.any():
+            logger.warning(
+                "Found %d rows that need to be normalised for pattern '%s'",
+                problematic.sum(),
+                pattern,
+            )
+            for col in columns:
+                # Normalise each column by dividing by the row sum and multiplying by 100
+                df.loc[problematic, col] = df.loc[problematic, col] / row_sums.loc[problematic] * 100
+        return df.copy()
+
+    def scrape_voting_intention_polls(
+        self, table_indices: list[int] | None = None
+    ) -> pd.DataFrame:
+        """Scrape polling data using the simple table extraction approach."""
+        raw_extracted_df = self.get_tables_simple(table_indices)
+
+        if raw_extracted_df is None or raw_extracted_df.empty:
+            logger.warning("No data extracted from tables")
+            return pd.DataFrame()
+
+        # - delete information rows - where the Brand value is the same as the Interview mode
+        processed_df = raw_extracted_df[raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"]].copy()
+
+        # - strip square bracket footnotes from every column
+        for col in processed_df.columns:
+            if processed_df[col].dtype == "object":
+                processed_df[col] = processed_df[col].str.replace(r"\[[a-z0-9]+\]", "", regex=True).str.strip()
+
+
+        # - remove percents from all "vote" columns. and make those columns numeric
+        for col in processed_df.columns:
+            if ("vote" in col.lower() or "size" in col.lower()) and processed_df[col].dtype == "object":
+                processed_df[col] = processed_df[col].str.replace("%", "", regex=True).str.strip()
+                processed_df[col] = pd.to_numeric(processed_df[col], errors="coerce")
+
+
+        # - parse dates
+        processed_df["parsed_date"] = processed_df["Date"].apply(
+            lambda x: improved_parse_date_range(x) if isinstance(x, str) else None
+        )
+
+        # - check for completeness
+        processed_df = processed_df.reset_index(drop=True)
+        processed_df = self.check_completeness(pattern="Primary", lower=self.PRIMARY_VOTE_LOWER, upper=self.PRIMARY_VOTE_UPPER, df=processed_df)
+        processed_df = self.check_completeness(pattern="2PP", lower=self.TPP_VOTE_LOWER, upper=self.TPP_VOTE_UPPER, df=processed_df)
+
+        # - redistribute undecideds
+        processed_df = self.distribute_undecideds(und_pattern="und", col_pattern="primary", df=processed_df)
+        processed_df = self.distribute_undecideds(und_pattern="und", col_pattern="2pp", df=processed_df)
+
+        # - normalise
+        processed_df = self.normalise_poll_data(df=processed_df, pattern="primary")
+        processed_df = self.normalise_poll_data(df=processed_df, pattern="2pp")
+
+        return processed_df
+
+    def scrape_attitudinal_polls(
+        self, table_indices: list[int] | None = None
+    ) -> pd.DataFrame:
+        """Scrape preferred attitudinal and leadership polling data using the simple table extraction approach."""
+        raw_extracted_df = self.get_tables_simple(table_indices, must_have=["prime minister"])
+
+        if raw_extracted_df is None or raw_extracted_df.empty:
+            logger.warning("No attitudinal polling data extracted from tables")
+            return pd.DataFrame()
+
+        # Handle inconsistent column names - use "Firm" if "Brand" doesn't exist
+        if "Brand" not in raw_extracted_df.columns and "Firm" in raw_extracted_df.columns:
+            raw_extracted_df = raw_extracted_df.rename(columns={"Firm": "Brand"})
+
+        # - delete information rows - where the Brand value is the same as the Interview mode
+        processed_df = raw_extracted_df[raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"]].copy()
+
+        # - strip square bracket footnotes from every column
+        for col in processed_df.columns:
+            if processed_df[col].dtype == "object":
+                processed_df[col] = processed_df[col].str.replace(r"\[[a-z0-9]+\]", "", regex=True).str.strip()
+
+        # - remove percents from all columns and make them numeric
+        for col in processed_df.columns:
+            if ("ley" in col.lower() or "albanese" in col.lower() or "prime minister" in col.lower()
+                and processed_df[col].dtype == "object"):
+                processed_df[col] = processed_df[col].str.replace("%", "", regex=True).str.strip()
+                processed_df[col] = pd.to_numeric(processed_df[col], errors="coerce")
+
+        # - parse dates
+        processed_df["parsed_date"] = processed_df["Date"].apply(
+            lambda x: improved_parse_date_range(x) if isinstance(x, str) else None
+        )
+
+        # - check for completeness for each group (including "don't know")
+        processed_df = processed_df.reset_index(drop=True)
+        
+        # Define the three groups with specific patterns
+        groups = ["Preferred prime minister", "Albanese ", "Ley "]
+        
+        # Check completeness for attitudinal polling
+        for group in groups:
+            processed_df = self.check_completeness(pattern=group, lower=90, upper=110, df=processed_df)
+
+        # No undecided redistribution needed for attitudinal polls
+
+        # - normalise each group (excluding net columns)
+        for group in groups:
+            processed_df = self.normalise_poll_data(df=processed_df, pattern=group)
+
+        return processed_df
+
+    def scrape_polls(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Scrape all polling data and return separate DataFrames for each type."""
-        soup = self.fetch_page()
-        tables = self.find_polling_tables(soup)
-        
-        voting_intention_data = []
-        preferred_pm_data = []
-        
-        for table, table_type in tables:
-            table_data = self.extract_table_data(table, table_type)
-            
-            if table_type == 'voting_intention':
-                voting_intention_data.extend(table_data)
-            elif table_type == 'preferred_pm':
-                preferred_pm_data.extend(table_data)
-        
-        # Create DataFrames
-        vi_df = pd.DataFrame(voting_intention_data) if voting_intention_data else pd.DataFrame()
-        pm_df = pd.DataFrame(preferred_pm_data) if preferred_pm_data else pd.DataFrame()
-        
-        # Clean and sort data
-        for df in [vi_df, pm_df]:
-            if not df.empty:
-                # Only use columns that exist for deduplication
-                dedup_cols = ['date']
-                if 'brand' in df.columns:
-                    dedup_cols.append('brand')
-                elif 'polling_firm' in df.columns:
-                    dedup_cols.append('polling_firm')
-                
-                df.drop_duplicates(subset=dedup_cols, inplace=True)
-                df.sort_values('date', inplace=True)
-                df.reset_index(drop=True, inplace=True)
-        
-        logger.info(f"Successfully scraped {len(vi_df)} voting intention and {len(pm_df)} preferred PM entries")
-        
+        # Use the simple pandas-based approach
+        vi_df = self.scrape_voting_intention_polls()
+        pm_df = self.scrape_attitudinal_polls()
+
+        logger.info(
+            "Successfully scraped %d voting intention and %d preferred attitudinal entries",
+            len(vi_df),
+            len(pm_df),
+        )
+
         return vi_df, pm_df
-    
+
     def save_data(self, vi_df: pd.DataFrame, pm_df: pd.DataFrame) -> None:
         """Save polling data to CSV files with today's date in filename."""
         # Ensure poll-data directory exists
         data_dir = Path("../poll-data")
         data_dir.mkdir(exist_ok=True)
-        
+
         # Get today's date for filename
-        today = datetime.now().strftime('%Y-%m-%d')
-        
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+
         # Save voting intention data
         if not vi_df.empty:
             vi_df_to_save = vi_df.copy()
-            vi_df_to_save['date'] = vi_df_to_save['date'].dt.strftime('%Y-%m-%d')
-            
+
             filename = f"voting_intention_{self.election_year}_{today}.csv"
             filepath = data_dir / filename
             vi_df_to_save.to_csv(filepath, index=False)
-            logger.info(f"Saved voting intention data to {filepath}")
-        
-        # Save preferred PM data
+            logger.info("Saved voting intention data to %s", filepath)
+
+        # Save preferred attitudinal data
         if not pm_df.empty:
             pm_df_to_save = pm_df.copy()
-            pm_df_to_save['date'] = pm_df_to_save['date'].dt.strftime('%Y-%m-%d')
-            
+
             filename = f"preferred_pm_{self.election_year}_{today}.csv"
             filepath = data_dir / filename
             pm_df_to_save.to_csv(filepath, index=False)
-            logger.info(f"Saved preferred PM data to {filepath}")
+            logger.info("Saved preferred attitudinal data to %s", filepath)
 
+
+# --- MAIN ---
 def main():
     """Main execution function."""
     try:
         # Scrape only next election data
         elections = ["next"]
-        
+
         for election in elections:
             print(f"\n=== Scraping {election} election data ===")
             scraper = WikipediaPollingScaper(election)
             print(f"URL: {scraper.url}")
             vi_df, pm_df = scraper.scrape_polls()
-            
+            print("COLUMNS: ", vi_df.columns.tolist())
+
             if not vi_df.empty or not pm_df.empty:
                 scraper.save_data(vi_df, pm_df)
-                
+
                 # Print summary
                 if not vi_df.empty:
                     print(f"Voting Intention - Total polls: {len(vi_df)}")
-                    print(f"Date range: {vi_df['date'].min().strftime('%Y-%m-%d')} to {vi_df['date'].max().strftime('%Y-%m-%d')}")
-                    print(f"Polling firms: {vi_df['brand'].nunique()}")
-                
+                    print(
+                        f"Date range: {vi_df['parsed_date'].min().strftime('%Y-%m-%d')} to "
+                        f"{vi_df['parsed_date'].max().strftime('%Y-%m-%d')}"
+                    )
+                    print(f"Polling firms: {vi_df['Brand'].nunique()}")
+
                 if not pm_df.empty:
-                    print(f"Preferred PM - Total polls: {len(pm_df)}")
-                    print(f"Date range: {pm_df['date'].min().strftime('%Y-%m-%d')} to {pm_df['date'].max().strftime('%Y-%m-%d')}")
+                    print(f"Attitudinal - Total polls: {len(pm_df)}")
+                    print(
+                        f"Date range: {pm_df['parsed_date'].min().strftime('%Y-%m-%d')} to "
+                        f"{pm_df['parsed_date'].max().strftime('%Y-%m-%d')}"
+                    )
             else:
                 print(f"No polling data found for {election}")
-            
+
     except Exception as e:
-        logger.error(f"Script failed: {e}")
+        logger.error("Script failed: %s", e)
         raise
+
 
 if __name__ == "__main__":
     main()
