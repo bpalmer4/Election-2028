@@ -59,7 +59,8 @@ def create_session_with_retry() -> requests.Session:
         {
             "Cache-Control": "no-cache, must-revalidate, private, max-age=0",
             "Pragma": "no-cache",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " 
+            + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         }
     )
 
@@ -422,7 +423,7 @@ def improved_parse_date_range(date: str) -> datetime.date | None:
 
 class WikipediaPollingScaper:
     """Scraper for Australian federal election polling data from Wikipedia."""
-    
+
     # Data validation thresholds
     PRIMARY_VOTE_LOWER = 97
     PRIMARY_VOTE_UPPER = 103
@@ -511,7 +512,7 @@ class WikipediaPollingScaper:
             )
             return get_combined_table(df_list, table_indices, verbose=True)
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-except
             logger.error("Failed to get tables: %s", e)
             return None
 
@@ -523,16 +524,16 @@ class WikipediaPollingScaper:
         if len(columns) == 0:
             logger.warning("No columns found matching pattern '%s'", pattern)
             return df
-        
+
         add_check = df[columns].sum(axis=1, skipna=True)
-        
+
         # Only check completeness for rows that have actual data (not all NaN)
         has_data = df[columns].notna().any(axis=1)
-        
+
         problematic = (add_check < lower) | (add_check > upper)
         # Only flag rows as problematic if they have data AND are outside range
         problematic = problematic & has_data
-        
+
         if problematic.any():
             logger.warning(
                 "Found %d rows with sum outside range [%d, %d] for pattern '%s'",
@@ -557,7 +558,7 @@ class WikipediaPollingScaper:
                 und_pattern, col_pattern
             )
             return df
-        
+
         und_col = und_cols[0]
         und_rows = df[und_col].notna() & (df[und_col] != 0)  # Rows where undecided column is not NaN and not zero
         if not und_rows.any():
@@ -566,8 +567,8 @@ class WikipediaPollingScaper:
         columns = [c for c in df.columns if col_pattern.lower() in c.lower() and c != und_col]
         if not columns:
             logger.warning("No columns found matching pattern '%s'", col_pattern)
-            return df 
-        
+            return df
+
         row_sums = df[columns].sum(axis=1, skipna=True)
 
         # redistribute - where appropriate
@@ -584,13 +585,12 @@ class WikipediaPollingScaper:
             return df
 
         row_sums = df[columns].sum(axis=1, skipna=True)
-        
+
         # Only normalize rows that have actual data (not all NaN)
         has_data = df[columns].notna().any(axis=1)
         problematic = (row_sums < self.NORMALISATION_LOWER) | (row_sums > self.NORMALISATION_UPPER)
         # Only normalize rows that have data AND are outside range
         problematic = problematic & has_data
-        
 
         if problematic.any():
             logger.warning(
@@ -636,8 +636,12 @@ class WikipediaPollingScaper:
 
         # - check for completeness
         processed_df = processed_df.reset_index(drop=True)
-        processed_df = self.check_completeness(pattern="Primary", lower=self.PRIMARY_VOTE_LOWER, upper=self.PRIMARY_VOTE_UPPER, df=processed_df)
-        processed_df = self.check_completeness(pattern="2PP", lower=self.TPP_VOTE_LOWER, upper=self.TPP_VOTE_UPPER, df=processed_df)
+        processed_df = self.check_completeness(
+            pattern="Primary", lower=self.PRIMARY_VOTE_LOWER, upper=self.PRIMARY_VOTE_UPPER, df=processed_df
+        )
+        processed_df = self.check_completeness(
+            pattern="2PP", lower=self.TPP_VOTE_LOWER, upper=self.TPP_VOTE_UPPER, df=processed_df
+        )
 
         # - redistribute undecideds
         processed_df = self.distribute_undecideds(und_pattern="und", col_pattern="primary", df=processed_df)
@@ -685,10 +689,10 @@ class WikipediaPollingScaper:
 
         # - check for completeness for each group (including "don't know")
         processed_df = processed_df.reset_index(drop=True)
-        
+
         # Define the three groups with specific patterns
         groups = ["Preferred prime minister", "Albanese ", "Ley "]
-        
+
         # Check completeness for attitudinal polling
         for group in groups:
             processed_df = self.check_completeness(pattern=group, lower=90, upper=110, df=processed_df)
