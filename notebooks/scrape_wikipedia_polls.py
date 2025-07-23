@@ -545,7 +545,10 @@ class WikipediaPollingScaper:
         return df.copy()
 
     def distribute_undecideds(self, und_pattern: str, col_pattern: str, df: pd.DataFrame) -> pd.DataFrame:
-        """Distribute undecided votes across vote columns."""
+        """Distribute undecided votes across vote columns.
+
+        Note: the Undecideds column is only deleted if the values have been redistributed.
+        """
 
         und_cols = [c for c in df.columns if und_pattern.lower() in c.lower() and col_pattern.lower() in c.lower()]
         if len(und_cols) != 1:
@@ -570,7 +573,7 @@ class WikipediaPollingScaper:
         # redistribute - where appropriate
         for col in columns:
             df.loc[und_rows, col] += (df.loc[und_rows, col] / row_sums[und_rows]) * df.loc[und_rows, und_col]
-        return df.copy()
+        return df.drop(columns=und_col).copy()  # drop the undecided column
 
     def normalise_poll_data(self, df: pd.DataFrame, pattern: str) -> pd.DataFrame:
         """Normalise polling data by ensuring all columns matching the pattern sum to 100%."""
