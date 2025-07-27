@@ -44,7 +44,7 @@ chmod +x election-winner.sh
 
 With a crontab entry along the following lines/including the full path 
 ```
-58 6 * * * [PATH]/Australian-Federal-Election-2028/automated/election-winner.sh
+58 6 * * * [PATH]/Election-2028/automated/election-winner.sh
 ```
 
 ### 3. Test the Scraper
@@ -52,7 +52,7 @@ With a crontab entry along the following lines/including the full path
 Test manually before relying on the cron job:
 
 ```bash
-cd /Users/bryanpalmer/Australian-Federal-Election-2028/automated
+cd /Users/bryanpalmer/Election-2028/automated
 python robust_scraper.py
 ```
 

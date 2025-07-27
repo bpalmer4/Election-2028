@@ -1,9 +1,9 @@
 #!/bin/zsh
-#crontab: 57 6 * * * /Users/bryanpalmer/Australian-Federal-Election-2028/automated/election-winner.sh
+#crontab: 57 6 * * * /Users/bryanpalmer/Election-2028/automated/election-winner.sh
 
 # set-up parameters
 home=/Users/bryanpalmer
-project=Australian-Federal-Election-2028
+project=Election-2028
 working=automated
 runrun=robust_scraper.py
 
@@ -32,5 +32,5 @@ if [ $? -eq 0 ]; then
     git push
     echo "$(date): Scraper succeeded, data committed" >>automated/winner-log.log
 else
-    echo "$(date): Scraper failed, no commit made" >>automated/winner-err.log
+    echo "$(date): Scraper failed, no commit made" >>winner-err.log
 fi

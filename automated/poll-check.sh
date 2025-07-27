@@ -1,12 +1,11 @@
 #!/bin/bash
 # Daily poll check wrapper script
-# 58 6,12,18 * * * /Users/bryanpalmer/Australian-Federal-Election-2028/automated/poll-check.sh   
+# 58 6,12,18 * * * /Users/bryanpalmer/Election-2028/automated/poll-check.sh   
 
 # set-up parameters
 home=/Users/bryanpalmer
-project=Australian-Federal-Election-2028
+project=Election-2028
 working=automated
-runrun=robust_scraper.py
 
 # move to the home directory
 cd $home
