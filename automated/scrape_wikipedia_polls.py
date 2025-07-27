@@ -872,17 +872,17 @@ def main():
                     logger.info("Voting Intention - Total polls: %d", len(vi_df))
                     logger.info(
                         "Date range: %s to %s",
-                        vi_df['parsed_date'].min().strftime('%Y-%m-%d'),
-                        vi_df['parsed_date'].max().strftime('%Y-%m-%d')
+                        vi_df["parsed_date"].min().strftime("%Y-%m-%d"),
+                        vi_df["parsed_date"].max().strftime("%Y-%m-%d"),
                     )
-                    logger.info("Polling firms: %d", vi_df['Brand'].nunique())
+                    logger.info("Polling firms: %d", vi_df["Brand"].nunique())
 
                 if not pm_df.empty:
                     logger.info("Attitudinal - Total polls: %d", len(pm_df))
                     logger.info(
                         "Date range: %s to %s",
-                        pm_df['parsed_date'].min().strftime('%Y-%m-%d'),
-                        pm_df['parsed_date'].max().strftime('%Y-%m-%d')
+                        pm_df["parsed_date"].min().strftime("%Y-%m-%d"),
+                        pm_df["parsed_date"].max().strftime("%Y-%m-%d"),
                     )
             else:
                 logger.error("No polling data found for %s", election)

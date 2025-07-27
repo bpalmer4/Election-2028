@@ -17,6 +17,8 @@ data/**
 model-images/**
 notebooks/Graveyard/**
 CLAUDE.md
+.claude
+poll-data/**
 
 # Automated directory - ignore sensitive files only
 automated/.env
