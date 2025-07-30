@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Robust election betting scraper with error handling and notifications."""
 
 import logging
@@ -297,7 +296,7 @@ class RobustScraper:
             summary = "\n".join(
                 [f"{name}: {price}" for name, price in odds_data.items()]
             )
-            send_success_notification(summary)
+            send_success_notification(summary, "Election Betting Scraper")
 
             logger.info("Scraper run completed successfully")
             return True
@@ -310,7 +309,7 @@ class RobustScraper:
             logger.debug(f"Full traceback: {tb_info}")
 
             # Send error notification
-            send_error_notification(error_msg, tb_info)
+            send_error_notification(error_msg, tb_info, "Election Betting Scraper")
 
             return False
 

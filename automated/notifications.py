@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Email notification system for scraper failures."""
 
 import smtplib
@@ -12,7 +11,9 @@ from config import EMAIL_CONFIG
 
 
 def send_error_notification(
-    error_message: str, traceback_info: Optional[str] = None
+    error_message: str, 
+    traceback_info: Optional[str] = None,
+    scraper_name: str = "Election Scraper"
 ) -> bool:
     """
     Send email notification when scraper fails.
@@ -20,6 +21,7 @@ def send_error_notification(
     Args:
         error_message: The main error message
         traceback_info: Optional full traceback information
+        scraper_name: Name of the scraper for subject/body text
 
     Returns:
         bool: True if email sent successfully, False otherwise
@@ -34,12 +36,12 @@ def send_error_notification(
         msg["From"] = EMAIL_CONFIG.sender_email
         msg["To"] = EMAIL_CONFIG.recipient_email
         msg["Subject"] = (
-            f"🚨 Election Scraper Failed - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            f"🚨 {scraper_name} Failed - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         )
 
         # Email body
         body = f"""
-Election betting scraper failed at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+{scraper_name} failed at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 Error: {error_message}
 
@@ -67,12 +69,16 @@ Automated notification from Australian Federal Election 2028 scraper
         return False
 
 
-def send_success_notification(data_summary: str) -> bool:
+def send_success_notification(
+    data_summary: str, 
+    scraper_name: str = "Election Scraper"
+) -> bool:
     """
     Send email notification when scraper succeeds (optional).
 
     Args:
         data_summary: Summary of captured data
+        scraper_name: Name of the scraper for subject/body text
 
     Returns:
         bool: True if email sent successfully, False otherwise
@@ -86,12 +92,12 @@ def send_success_notification(data_summary: str) -> bool:
         msg["From"] = EMAIL_CONFIG.sender_email
         msg["To"] = EMAIL_CONFIG.recipient_email
         msg["Subject"] = (
-            f"✅ Election Scraper Success - {datetime.now().strftime('%Y-%m-%d')}"
+            f"✅ {scraper_name} Success - {datetime.now().strftime('%Y-%m-%d')}"
         )
 
         # Email body
         body = f"""
-Election betting scraper completed successfully at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+{scraper_name} completed successfully at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 Data captured:
 {data_summary}

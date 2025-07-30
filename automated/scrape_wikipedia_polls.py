@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Scrape Australian federal election polling data from Wikipedia.
 

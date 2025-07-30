@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Daily check for new polls on Wikipedia - sends email if new polls found."""
 
 import logging
@@ -67,13 +66,13 @@ def main():
             message += f"\nTotal: {new_vi_count} VI polls, {new_pm_count} PM polls"
 
             logger.info("Sending notification...")
-            send_success_notification(message)
+            send_success_notification(message, "Wikipedia Polls Scraper")
         else:
             logger.info("No new polls found")
 
     except Exception as e:
         logger.error(f"Poll check failed: {e}")
-        send_error_notification(str(e))
+        send_error_notification(str(e), scraper_name="Wikipedia Polls Scraper")
 
 
 if __name__ == "__main__":
