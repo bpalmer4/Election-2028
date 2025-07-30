@@ -1,3 +1,4 @@
+# pylint: disable=logging-fstring-interpolation
 """Robust election betting scraper with error handling and notifications."""
 
 import logging
@@ -16,7 +17,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException, TimeoutException
 
-from decouple import config
+from decouple import config  # type: ignore[import-untyped]
 from notifications import send_error_notification, send_success_notification
 
 
@@ -30,60 +31,110 @@ logger = logging.getLogger(__name__)
 
 
 class RobustScraper:
-    """Robust scraper with fallback mechanisms and error handling."""
+    """Robust scraper with fallback mechanisms and error handling.
+
+    This scraper uses a two-step process:
+    1. Load the base Sportsbet politics page and scan for election market links
+    2. Extract the current market URL and scrape betting odds from that specific page
+
+    This approach makes the scraper resilient to market ID changes that occur
+    every few months when Sportsbet creates new betting markets.
+    """
 
     def __init__(self):
+        # Chrome WebDriver instance - initialized later in setup_driver()
         self.driver: webdriver.Chrome | None = None
-        
-        # Configuration from environment
-        self.url_base = config('SCRAPER_URL_BASE', default='https://www.sportsbet.com.au/betting/politics/australian-federal-politics/')
-        self.url_path = config('SCRAPER_URL_PATH', default='49th-parliament-of-australia-9232392')
-        self.timeout = config('SCRAPER_TIMEOUT', cast=int, default=10)
-        self.retry_attempts = config('SCRAPER_RETRY_ATTEMPTS', cast=int, default=3)
-        self.retry_delay = config('SCRAPER_RETRY_DELAY', cast=float, default=2.0)
-        
-        # CSS selectors with fallbacks
+
+        # Configuration loaded from .env file (via python-decouple) with sensible defaults
+        # These can be overridden by creating a .env file in the project root
+
+        # Base URL containing links to all political betting markets
+        self.base_url = config(
+            "SCRAPER_BASE_URL",
+            default="https://www.sportsbet.com.au/betting/politics/australian-federal-politics/",
+            cast=str,
+        )
+
+        # Search text to find the specific election market link (case-insensitive)
+        self.market_search_text = config(
+            "SCRAPER_MARKET_SEARCH", default="49th parliament of australia", cast=str
+        )
+
+        # Maximum seconds to wait for page elements to load
+        self.timeout = config("SCRAPER_TIMEOUT", cast=int, default=20)
+
+        # Number of retry attempts when page loading fails
+        self.retry_attempts = config("SCRAPER_RETRY_ATTEMPTS", cast=int, default=3)
+
+        # Seconds to wait between retry attempts
+        self.retry_delay = config("SCRAPER_RETRY_DELAY", cast=float, default=5.0)
+
+        # Cached URL of the current election market (discovered during scraping)
+        self.market_url: str | None = None
+
+        # Multi-tier fallback CSS selectors for scraping Sportsbet HTML
+        # These are ordered from most specific/reliable to most general
+        # If Sportsbet updates their CSS classes, the scraper tries each selector until one works
+        # Selectors for the main content area containing all betting markets
         self.content_selectors = [
-            'div[data-automation-id="content-background"]',
-            'div[data-automation-id="content"]',
-            "div.content-background",
-            "div.background_fja218n",
+            'div[data-automation-id="content-background"]',  # Primary: automation ID (most stable)
+            'div[data-automation-id="content"]',  # Alternative automation ID
+            "div.content-background",  # Fallback: semantic class name
+            "div.background_fja218n",  # Last resort: generated class (fragile)
         ]
-        
+
+        # Selectors for individual betting outcome containers
+        # Each container holds one political party/coalition and their odds
         self.outcome_selectors = [
-            "div.outcomeContainer_f18v2vnr",
-            "div.outcomeCardItems_f4kk892",
-            'div[class*="outcome"]',
-            'div[class*="card"]',
+            "div.outcomeContainer_f18v2vnr",  # Primary: specific outcome container
+            "div.outcomeCardItems_f4kk892",  # Alternative: card items container
+            'div[class*="outcome"]',  # Fallback: any div with "outcome" in class
+            'div[class*="card"]',  # Last resort: any div with "card" in class
         ]
-        
+
+        # Selectors for political party/coalition names within each outcome
         self.name_selectors = [
-            "div.nameWrapper_fddsvlq",
-            'div[class*="name"]',
-            'div[class*="competitor"]',
-            'span[class*="name"]',
+            "div.nameWrapper_fddsvlq",  # Primary: specific name wrapper
+            'div[class*="name"]',  # Fallback: any div with "name" in class
+            'div[class*="competitor"]',  # Alternative: competitor containers
+            'span[class*="name"]',  # Last resort: span elements with "name"
         ]
-        
+
+        # Selectors for betting odds/prices within each outcome
         self.price_selectors = [
-            "div.priceText_f71sibe",
-            'div[class*="price"]',
-            'span[class*="price"]',
-            'div[class*="odds"]',
+            "div.priceText_f71sibe",  # Primary: specific price text element
+            'div[class*="price"]',  # Fallback: any div with "price" in class
+            'span[class*="price"]',  # Alternative: span elements with "price"
+            'div[class*="odds"]',  # Last resort: any div with "odds" in class
         ]
 
     def setup_driver(self) -> bool:
-        """Set up Chrome driver with error handling."""
+        """Initialize Chrome WebDriver with headless configuration and error handling.
+
+        Returns:
+            bool: True if driver setup successful, False otherwise
+        """
         try:
+            # Install and configure ChromeDriver automatically
             service = ChromeService(ChromeDriverManager().install())
             options = webdriver.ChromeOptions()
-            options.add_argument("--ignore-certificate-errors")
-            options.add_argument("--incognito")
-            options.add_argument("--headless")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--disable-gpu")
 
+            # Chrome options for reliable headless operation
+            options.add_argument("--ignore-certificate-errors")  # Handle SSL issues
+            options.add_argument("--incognito")  # Private browsing mode
+            options.add_argument("--headless")  # Run without GUI (server-friendly)
+            options.add_argument(
+                "--no-sandbox"
+            )  # Required for some server environments
+            options.add_argument(
+                "--disable-dev-shm-usage"
+            )  # Overcome limited resource problems
+            options.add_argument("--disable-gpu")  # Disable GPU acceleration
+
+            # Create Chrome driver instance with configured options
             self.driver = webdriver.Chrome(service=service, options=options)  # type: ignore[call-arg]
+
+            # Set global timeout for element finding
             self.driver.implicitly_wait(self.timeout)
 
             logger.info("Chrome driver setup successful")
@@ -93,30 +144,39 @@ class RobustScraper:
             logger.error(f"Failed to setup driver: {e}")
             return False
 
-    def get_page_content(self) -> BeautifulSoup | None:
-        """Get page content with retry logic."""
-        url = f"{self.url_base}{self.url_path}"
+    def load_page_with_retry(
+        self, url: str, page_description: str
+    ) -> BeautifulSoup | None:
+        """Load a web page with automatic retry on failure.
 
+        Args:
+            url: The URL to load
+            page_description: Human-readable description for logging
+
+        Returns:
+            BeautifulSoup object of page content, or None if all attempts failed
+        """
         for attempt in range(self.retry_attempts):
             try:
                 logger.info(
-                    f"Attempting to load page (attempt {attempt + 1}/{self.retry_attempts})"
+                    f"Attempting to load {page_description} (attempt {attempt + 1}/{self.retry_attempts})"
                 )
 
                 if self.driver is None:
-                    raise Exception("Driver not initialized")
+                    raise RuntimeError("Driver not initialized")
 
                 self.driver.get(url)
 
-                # Wait for content to load
+                # Wait for basic page structure to load
                 wait = WebDriverWait(self.driver, self.timeout)
                 wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
 
-                # Additional wait for dynamic content
+                # Additional wait for JavaScript-rendered content (betting odds are dynamic)
                 time.sleep(2)
 
+                # Parse the fully-loaded page HTML
                 soup = BeautifulSoup(self.driver.page_source, "lxml")
-                logger.info("Page loaded successfully")
+                logger.info(f"{page_description} loaded successfully")
                 return soup
 
             except (WebDriverException, TimeoutException) as e:
@@ -124,10 +184,77 @@ class RobustScraper:
                 if attempt < self.retry_attempts - 1:
                     time.sleep(self.retry_delay)
                 else:
-                    logger.error("All attempts to load page failed")
+                    logger.error(f"All attempts to load {page_description} failed")
                     return None
 
         return None
+
+    def find_market_url(self) -> str | None:
+        """Scan the base politics page to find the current election market URL.
+
+        This method loads the main Sportsbet politics page and searches for a link
+        containing the market search text (e.g., "49th parliament of australia").
+        This approach makes the scraper resilient to market ID changes.
+
+        Returns:
+            str: Full URL to the election market page, or None if not found
+        """
+        soup = self.load_page_with_retry(str(self.base_url), "base politics page")
+        if not soup:
+            return None
+
+        # Search through all links on the page for the election market
+        links = soup.find_all("a", href=True)
+
+        for link in links:
+            href = link.get("href")  # type: ignore[union-attr]
+            if not href or not isinstance(href, str):
+                continue
+
+            text = link.get_text(strip=True)  # type: ignore[union-attr]
+            if not isinstance(text, str):
+                continue
+            text_lower = text.lower()
+
+            # Check if link text contains our search term (case-insensitive)
+            if href and str(self.market_search_text).lower() in text_lower:
+                # Convert relative URLs to absolute URLs
+                if href.startswith("/"):
+                    # Relative path: prepend domain
+                    full_url = f"https://www.sportsbet.com.au{href}"
+                elif href.startswith("http"):
+                    # Already absolute URL
+                    full_url = href
+                else:
+                    # Relative to current directory: append to base URL
+                    full_url = f"{str(self.base_url).rstrip('/')}/{href}"
+
+                logger.info(f"Found market link: {text} -> {full_url}")
+                return full_url
+
+        logger.error(f"No market link found containing '{self.market_search_text}'")
+        return None
+
+    def get_market_content(self) -> BeautifulSoup | None:
+        """Get the HTML content of the specific election market page.
+
+        This method first finds the market URL (if not already cached) then loads
+        that specific page containing the betting odds.
+
+        Returns:
+            BeautifulSoup object of the market page, or None if failed
+        """
+        # Find the market URL if we haven't already
+        if not self.market_url:
+            self.market_url = self.find_market_url()
+
+        # Abort if we couldn't find the market URL
+        if not self.market_url:
+            logger.error("Could not find market URL")
+            return None
+
+        # Load the specific market page
+        return self.load_page_with_retry(self.market_url, "election market page")
 
     def find_element_with_fallbacks(
         self,
@@ -135,30 +262,47 @@ class RobustScraper:
         selectors: list[str],
         context: str = "",
     ) -> Tag | list[Tag] | None:
-        """Try multiple selectors until one works."""
+        """Try multiple CSS selectors in order until one finds elements.
+
+        This is the core resilience mechanism - if Sportsbet changes their CSS,
+        the scraper automatically falls back to more general selectors.
+
+        Args:
+            soup: BeautifulSoup object or Tag to search within
+            selectors: List of CSS selectors to try, in order of preference
+            context: Description for logging (e.g., "content area", "price")
+
+        Returns:
+            Single Tag, list of Tags, or None if no selector worked
+        """
+        # Try each selector in order until one works
         for selector in selectors:
             try:
                 if selector.startswith("div["):
-                    # CSS selector
+                    # Modern CSS selector (preferred method)
                     css_elements = soup.select(selector)
                     if css_elements:
-                        logger.info(f"Found {context} using selector: {selector}")
+                        logger.info(f"Found {context} using CSS selector: {selector}")
                         return (
                             css_elements[0] if len(css_elements) == 1 else css_elements
                         )  # type: ignore[return-value]
                 else:
-                    # Class-based search
+                    # Legacy class-based search (fallback method)
                     if "data-automation-id" in selector:
+                        # Extract automation ID from selector string
                         attr_val = selector.split('"')[1]
                         find_elements = soup.find_all(
                             "div", {"data-automation-id": attr_val}
                         )
                     else:
+                        # Convert CSS class selector to BeautifulSoup format
                         class_name = selector.replace("div.", "").replace(".", " ")
                         find_elements = soup.find_all("div", {"class": class_name})
 
                     if find_elements:
-                        logger.info(f"Found {context} using selector: {selector}")
+                        logger.info(
+                            f"Found {context} using fallback selector: {selector}"
+                        )
                         return (
                             find_elements[0]  # type: ignore[return-value]
                             if len(find_elements) == 1
@@ -173,9 +317,18 @@ class RobustScraper:
         return None
 
     def extract_odds_data(self, soup: BeautifulSoup) -> Dict[str, str] | None:
-        """Extract odds data with multiple fallback strategies."""
+        """Extract betting odds data from the market page HTML.
+
+        This method uses the fallback selector system to find:
+        1. The main content area containing all betting markets
+        2. Individual outcome containers (one per political party)
+        3. Party names and their corresponding odds within each container
+
+        Returns:
+            Dict mapping party names to their decimal odds, or None if extraction failed
+        """
         try:
-            # Find main content area
+            # Step 1: Find the main content area containing all betting markets
             content_div = self.find_element_with_fallbacks(
                 soup, self.content_selectors, "content area"
             )
@@ -184,8 +337,8 @@ class RobustScraper:
                 logger.error("Could not find main content area")
                 return None
 
-            # Find outcome containers
-            # Handle content_div which could be a Tag or list[Tag]
+            # Step 2: Find individual outcome containers within the content area
+            # Handle the case where content_div might be a single element or list
             content_for_search = (
                 content_div[0] if isinstance(content_div, list) else content_div
             )
@@ -199,22 +352,22 @@ class RobustScraper:
                 logger.error("Could not find outcome containers")
                 return None
 
-            # Handle both single element and list
+            # Ensure we have a list of containers to iterate over
             if not isinstance(outcome_containers, list):
                 outcome_containers = [outcome_containers]
 
-            # Extract name/price pairs
+            # Step 3: Extract party name and odds from each outcome container
             results = {}
             for container in outcome_containers:
                 try:
-                    # Find name
+                    # Find the political party/coalition name within this container
                     name_element = self.find_element_with_fallbacks(
                         container,
                         self.name_selectors,
                         "name",  # type: ignore[arg-type]
                     )
 
-                    # Find price
+                    # Find the betting odds/price within this container
                     price_element = self.find_element_with_fallbacks(
                         container,
                         self.price_selectors,
@@ -222,7 +375,7 @@ class RobustScraper:
                     )
 
                     if name_element and price_element:
-                        # Handle both single elements and lists
+                        # Handle cases where selectors return single elements or lists
                         name_tag = (
                             name_element[0]
                             if isinstance(name_element, list)
@@ -234,9 +387,11 @@ class RobustScraper:
                             else price_element
                         )
 
+                        # Extract clean text content (remove whitespace)
                         name = name_tag.get_text(strip=True)  # type: ignore[union-attr]
                         price = price_tag.get_text(strip=True)  # type: ignore[union-attr]
 
+                        # Store the party -> odds mapping
                         if name and price:
                             results[name] = price
                             logger.info(f"Extracted: {name} -> {price}")
@@ -257,35 +412,49 @@ class RobustScraper:
             return None
 
     def save_data(self, data: Dict[str, str]) -> bool:
-        """Save data to CSV file with consistent format."""
+        """Save extracted odds data to CSV file with timestamped format.
+
+        The data is saved in the format expected by the analysis notebooks:
+        - Index: datetime timestamp of when data was captured
+        - Columns: Party name and decimal odds
+
+        Args:
+            data: Dictionary mapping party names to their decimal odds
+
+        Returns:
+            bool: True if save successful, False otherwise
+        """
         try:
-            # Convert to DataFrame with consistent column names
+            # Convert dictionary to DataFrame with standardized column names
+            # Transpose to get parties as rows, Party/Odds as columns
             df = pd.DataFrame([data.keys(), data.values()], index=["Party", "Odds"]).T
+
+            # Add timestamp index - same timestamp for all parties (single scrape)
             df.index = pd.DatetimeIndex([pd.Timestamp.now()] * len(df))
             df.index.name = "Datetime"
 
-            # Ensure directory exists
+            # Ensure the betting-data directory exists (create if needed)
             file_dir = "../betting-data"
             Path(file_dir).mkdir(parents=True, exist_ok=True)
             file_path = f"{file_dir}/sportsbet-2028-election-winner.csv"
 
-            # Check if file exists and has data
+            # Determine if we need to write CSV headers
             file_exists = Path(file_path).exists()
             write_header = not file_exists
 
             if file_exists:
-                # Check if file is empty or has inconsistent format
+                # Check if existing file has correct format (headers)
                 try:
                     existing_df = pd.read_csv(file_path, nrows=1)
                     if (
                         len(existing_df.columns) < 3
                         or "Party" not in existing_df.columns
                     ):
-                        write_header = True
+                        write_header = True  # File exists but has wrong format
                 except Exception:
-                    write_header = True
+                    write_header = True  # File exists but can't be read
 
-            # Save to file
+            # Append new data to CSV file
             df.to_csv(file_path, mode="a", index=True, header=write_header)
 
             logger.info(f"Data saved to {file_path}")
@@ -296,38 +465,55 @@ class RobustScraper:
             return False
 
     def cleanup(self):
-        """Clean up resources."""
+        """Clean up Chrome WebDriver resources.
+
+        This method should always be called to prevent memory leaks and
+        zombie Chrome processes.
+        """
         if self.driver:
             try:
+                # Properly close Chrome browser and clean up WebDriver
                 self.driver.quit()
-                logger.info("Driver cleaned up")
+                logger.info("Chrome WebDriver cleaned up successfully")
             except Exception as e:
-                logger.warning(f"Error cleaning up driver: {e}")
+                logger.warning(f"Error during WebDriver cleanup: {e}")
 
     def run(self) -> bool:
-        """Main scraper execution."""
-        try:
-            logger.info("Starting scraper run")
+        """Execute the complete scraping workflow.
 
-            # Setup driver
+        This method orchestrates the entire scraping process:
+        1. Set up Chrome WebDriver
+        2. Find and load the current election market page
+        3. Extract betting odds data
+        4. Save data to CSV file
+        5. Send notifications about success/failure
+        6. Clean up resources
+
+        Returns:
+            bool: True if entire process successful, False if any step failed
+        """
+        try:
+            logger.info("Starting complete scraper workflow")
+
+            # Step 1: Initialize Chrome WebDriver
             if not self.setup_driver():
                 raise Exception("Failed to setup Chrome driver")
 
-            # Get page content
-            soup = self.get_page_content()
+            # Step 2: Load election market page (two-step URL discovery process)
+            soup = self.get_market_content()
             if not soup:
-                raise Exception("Failed to load page content")
+                raise Exception("Failed to load market page content")
 
-            # Extract data
+            # Step 3: Extract betting odds from HTML
             odds_data = self.extract_odds_data(soup)
             if not odds_data:
                 raise Exception("Failed to extract odds data")
 
-            # Save data
+            # Step 4: Save timestamped data to CSV file
             if not self.save_data(odds_data):
                 raise Exception("Failed to save data")
 
-            # Send success notification (optional)
+            # Step 5: Send success notification with scraped data summary
             summary = "\n".join(
                 [f"{name}: {price}" for name, price in odds_data.items()]
             )
@@ -337,27 +523,33 @@ class RobustScraper:
             return True
 
         except Exception as e:
+            # Handle any errors that occurred during scraping
             error_msg = str(e)
             tb_info = traceback.format_exc()
 
-            logger.error(f"Scraper failed: {error_msg}")
-            logger.debug(f"Full traceback: {tb_info}")
+            logger.error(f"Scraper workflow failed: {error_msg}")
+            logger.debug(f"Full error traceback: {tb_info}")
 
-            # Send error notification
+            # Send detailed error notification
             send_error_notification(error_msg, tb_info, "Election Betting Scraper")
 
             return False
 
         finally:
+            # Always clean up WebDriver resources, even if scraping failed
             self.cleanup()
 
 
 def main():
-    """Main entry point."""
+    """Main entry point when script is run directly.
+
+    Creates a scraper instance, runs it, and exits with appropriate code.
+    """
+    # Create and run the scraper
     scraper = RobustScraper()
     success = scraper.run()
 
-    # Exit with appropriate code
+    # Exit with standard codes: 0 for success, 1 for failure
     exit(0 if success else 1)
 
 

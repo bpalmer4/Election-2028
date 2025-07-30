@@ -7,13 +7,13 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional
 
-from decouple import config
+from decouple import config  # type: ignore[import-untyped]
 
 
 def send_error_notification(
-    error_message: str, 
+    error_message: str,
     traceback_info: Optional[str] = None,
-    scraper_name: str = "Election Scraper"
+    scraper_name: str = "Election Scraper",
 ) -> bool:
     """
     Send email notification when scraper fails.
@@ -26,22 +26,22 @@ def send_error_notification(
     Returns:
         bool: True if email sent successfully, False otherwise
     """
-    sender_email = config('SENDER_EMAIL', default='')
-    sender_password = config('SENDER_PASSWORD', default='')
-    recipient_email = config('RECIPIENT_EMAIL', default='')
-    
+    sender_email = config("SENDER_EMAIL", default="", cast=str)
+    sender_password = config("SENDER_PASSWORD", default="", cast=str)
+    recipient_email = config("RECIPIENT_EMAIL", default="", cast=str)
+
     if not (sender_email and sender_password and recipient_email):
         logging.warning("Email not configured - cannot send notification")
         return False
-        
-    smtp_server = config('SMTP_SERVER', default='smtp.gmail.com')
-    smtp_port = config('SMTP_PORT', cast=int, default=587)
+
+    smtp_server = config("SMTP_SERVER", default="smtp.gmail.com", cast=str)
+    smtp_port = config("SMTP_PORT", cast=int, default=587)
 
     try:
         # Create message
         msg = MIMEMultipart()
-        msg["From"] = sender_email
-        msg["To"] = recipient_email
+        msg["From"] = str(sender_email)
+        msg["To"] = str(recipient_email)
         msg["Subject"] = (
             f"🚨 {scraper_name} Failed - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         )
@@ -63,9 +63,9 @@ Automated notification from Australian Federal Election 2028 scraper
         msg.attach(MIMEText(body, "plain"))
 
         # Send email
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
+        with smtplib.SMTP(str(smtp_server), smtp_port) as server:
             server.starttls()
-            server.login(sender_email, sender_password)
+            server.login(str(sender_email), str(sender_password))
             server.send_message(msg)
 
         logging.info("Error notification email sent successfully")
@@ -77,8 +77,7 @@ Automated notification from Australian Federal Election 2028 scraper
 
 
 def send_success_notification(
-    data_summary: str, 
-    scraper_name: str = "Election Scraper"
+    data_summary: str, scraper_name: str = "Election Scraper"
 ) -> bool:
     """
     Send email notification when scraper succeeds (optional).
@@ -90,21 +89,21 @@ def send_success_notification(
     Returns:
         bool: True if email sent successfully, False otherwise
     """
-    sender_email = config('SENDER_EMAIL', default='')
-    sender_password = config('SENDER_PASSWORD', default='')
-    recipient_email = config('RECIPIENT_EMAIL', default='')
-    
+    sender_email = config("SENDER_EMAIL", default="", cast=str)
+    sender_password = config("SENDER_PASSWORD", default="", cast=str)
+    recipient_email = config("RECIPIENT_EMAIL", default="", cast=str)
+
     if not (sender_email and sender_password and recipient_email):
         return False
-        
-    smtp_server = config('SMTP_SERVER', default='smtp.gmail.com')
-    smtp_port = config('SMTP_PORT', cast=int, default=587)
+
+    smtp_server = config("SMTP_SERVER", default="smtp.gmail.com", cast=str)
+    smtp_port = config("SMTP_PORT", cast=int, default=587)
 
     try:
         # Create message
         msg = MIMEMultipart()
-        msg["From"] = sender_email
-        msg["To"] = recipient_email
+        msg["From"] = str(sender_email)
+        msg["To"] = str(recipient_email)
         msg["Subject"] = (
             f"✅ {scraper_name} Success - {datetime.now().strftime('%Y-%m-%d')}"
         )
@@ -123,9 +122,9 @@ Automated notification from Australian Federal Election 2028 scraper
         msg.attach(MIMEText(body, "plain"))
 
         # Send email
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
+        with smtplib.SMTP(str(smtp_server), smtp_port) as server:
             server.starttls()
-            server.login(sender_email, sender_password)
+            server.login(str(sender_email), str(sender_password))
             server.send_message(msg)
 
         logging.info("Success notification email sent")
