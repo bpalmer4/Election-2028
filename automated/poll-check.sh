@@ -16,9 +16,4 @@ source $home/$project/.venv/bin/activate
 # move to the working directory
 cd $project/$working
 
-# Load environment variables from .env file if it exists
-if [ -f ".env" ]; then
-    export $(cat .env | grep -v '^#' | xargs)
-fi
-
-python3 check_new_polls.py >>poll-check-log.log 2>>poll-check-err.log
+uv run python3 check_new_polls.py >>poll-check-log.log 2>>poll-check-err.log

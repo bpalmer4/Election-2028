@@ -16,7 +16,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException, TimeoutException
 
-from config import SCRAPER_CONFIG
+from decouple import config
 from notifications import send_error_notification, send_success_notification
 
 
@@ -33,8 +33,43 @@ class RobustScraper:
     """Robust scraper with fallback mechanisms and error handling."""
 
     def __init__(self):
-        self.config = SCRAPER_CONFIG
         self.driver: webdriver.Chrome | None = None
+        
+        # Configuration from environment
+        self.url_base = config('SCRAPER_URL_BASE', default='https://www.sportsbet.com.au/betting/politics/australian-federal-politics/')
+        self.url_path = config('SCRAPER_URL_PATH', default='49th-parliament-of-australia-9232392')
+        self.timeout = config('SCRAPER_TIMEOUT', cast=int, default=10)
+        self.retry_attempts = config('SCRAPER_RETRY_ATTEMPTS', cast=int, default=3)
+        self.retry_delay = config('SCRAPER_RETRY_DELAY', cast=float, default=2.0)
+        
+        # CSS selectors with fallbacks
+        self.content_selectors = [
+            'div[data-automation-id="content-background"]',
+            'div[data-automation-id="content"]',
+            "div.content-background",
+            "div.background_fja218n",
+        ]
+        
+        self.outcome_selectors = [
+            "div.outcomeContainer_f18v2vnr",
+            "div.outcomeCardItems_f4kk892",
+            'div[class*="outcome"]',
+            'div[class*="card"]',
+        ]
+        
+        self.name_selectors = [
+            "div.nameWrapper_fddsvlq",
+            'div[class*="name"]',
+            'div[class*="competitor"]',
+            'span[class*="name"]',
+        ]
+        
+        self.price_selectors = [
+            "div.priceText_f71sibe",
+            'div[class*="price"]',
+            'span[class*="price"]',
+            'div[class*="odds"]',
+        ]
 
     def setup_driver(self) -> bool:
         """Set up Chrome driver with error handling."""
@@ -49,7 +84,7 @@ class RobustScraper:
             options.add_argument("--disable-gpu")
 
             self.driver = webdriver.Chrome(service=service, options=options)  # type: ignore[call-arg]
-            self.driver.implicitly_wait(self.config.timeout)
+            self.driver.implicitly_wait(self.timeout)
 
             logger.info("Chrome driver setup successful")
             return True
@@ -60,12 +95,12 @@ class RobustScraper:
 
     def get_page_content(self) -> BeautifulSoup | None:
         """Get page content with retry logic."""
-        url = f"{self.config.url_base}{self.config.url_path}"
+        url = f"{self.url_base}{self.url_path}"
 
-        for attempt in range(self.config.retry_attempts):
+        for attempt in range(self.retry_attempts):
             try:
                 logger.info(
-                    f"Attempting to load page (attempt {attempt + 1}/{self.config.retry_attempts})"
+                    f"Attempting to load page (attempt {attempt + 1}/{self.retry_attempts})"
                 )
 
                 if self.driver is None:
@@ -74,7 +109,7 @@ class RobustScraper:
                 self.driver.get(url)
 
                 # Wait for content to load
-                wait = WebDriverWait(self.driver, self.config.timeout)
+                wait = WebDriverWait(self.driver, self.timeout)
                 wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
 
                 # Additional wait for dynamic content
@@ -86,8 +121,8 @@ class RobustScraper:
 
             except (WebDriverException, TimeoutException) as e:
                 logger.warning(f"Attempt {attempt + 1} failed: {e}")
-                if attempt < self.config.retry_attempts - 1:
-                    time.sleep(self.config.retry_delay)
+                if attempt < self.retry_attempts - 1:
+                    time.sleep(self.retry_delay)
                 else:
                     logger.error("All attempts to load page failed")
                     return None
@@ -142,7 +177,7 @@ class RobustScraper:
         try:
             # Find main content area
             content_div = self.find_element_with_fallbacks(
-                soup, self.config.content_selectors or [], "content area"
+                soup, self.content_selectors, "content area"
             )
 
             if not content_div:
@@ -156,7 +191,7 @@ class RobustScraper:
             )
             outcome_containers = self.find_element_with_fallbacks(
                 content_for_search,  # type: ignore[arg-type]
-                self.config.outcome_selectors or [],
+                self.outcome_selectors,
                 "outcome containers",
             )
 
@@ -175,14 +210,14 @@ class RobustScraper:
                     # Find name
                     name_element = self.find_element_with_fallbacks(
                         container,
-                        self.config.name_selectors or [],
+                        self.name_selectors,
                         "name",  # type: ignore[arg-type]
                     )
 
                     # Find price
                     price_element = self.find_element_with_fallbacks(
                         container,
-                        self.config.price_selectors or [],
+                        self.price_selectors,
                         "price",  # type: ignore[arg-type]
                     )
 
