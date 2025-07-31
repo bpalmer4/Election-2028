@@ -15,5 +15,4 @@ source $home/$project/.venv/bin/activate
 
 # move to the working directory
 cd $project/$working
-
-uv run python3 check_new_polls.py >>poll-check-log.log 2>>poll-check-err.log
+python check_new_polls.py >>poll-check-log.log 2>>poll-check-err.log

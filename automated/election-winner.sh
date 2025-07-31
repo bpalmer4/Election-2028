@@ -17,7 +17,7 @@ source $home/$project/.venv/bin/activate
 cd $project/$working
 
 #initiate the data capture with robust scraper  
-uv run python ./$runrun >>winner-log.log 2>>winner-err.log
+python ./$runrun >>winner-log.log 2>>winner-err.log
 
 # Only commit and push if scraper succeeded (exit code 0)
 if [ $? -eq 0 ]; then
