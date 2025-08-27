@@ -557,7 +557,9 @@ class WikipediaPollingScaper:
     def check_completeness(
         self, pattern: str, lower: int, upper: int, df: pd.DataFrame
     ) -> pd.DataFrame:
-        """Check completeness of polling data in columns selected for matching pattern"""
+        """Check completeness of polling data in columns selected for matching pattern.
+        
+        Now keeps partial data and adds a flag column to indicate completeness status."""
 
         columns = pd.Index(
             c
@@ -577,15 +579,22 @@ class WikipediaPollingScaper:
         # Only flag rows as problematic if they have data AND are outside range
         problematic = problematic & has_data
 
+        # Add a completeness flag column
+        flag_col_name = f"{pattern.lower()}_data_complete"
+        df[flag_col_name] = True
+        
         if problematic.any():
             logger.warning(
-                "Found %d rows with sum outside range [%d, %d] for pattern '%s'",
+                "Found %d rows with partial data (sum outside range [%d, %d]) for pattern '%s'",
                 problematic.sum(),
                 lower,
                 upper,
                 pattern,
             )
-            df.loc[problematic, columns] = np.nan  # Set problematic rows to NaN
+            # Mark incomplete data but keep the values
+            df.loc[problematic, flag_col_name] = False
+            logger.info("Keeping partial data for %d rows with completeness flag set to False", problematic.sum())
+        
         return df.copy()
 
     def distribute_undecideds(
@@ -634,12 +643,14 @@ class WikipediaPollingScaper:
         return df.drop(columns=und_col).copy()  # drop the undecided column
 
     def normalise_poll_data(self, df: pd.DataFrame, pattern: str) -> pd.DataFrame:
-        """Normalise polling data by ensuring all columns matching the pattern sum to 100%."""
+        """Normalise polling data by ensuring all columns matching the pattern sum to 100%.
+        
+        Only normalizes rows marked as complete data."""
 
         columns = pd.Index(
             c
             for c in df.columns
-            if pattern.lower() in c.lower() and "net" not in c.lower()
+            if pattern.lower() in c.lower() and "net" not in c.lower() and "_data_complete" not in c.lower()
         )
         if len(columns) == 0:
             logger.warning("No columns found matching pattern '%s'", pattern)
@@ -647,6 +658,10 @@ class WikipediaPollingScaper:
 
         row_sums = df[columns].sum(axis=1, skipna=True)
 
+        # Check if we have a completeness flag column
+        flag_col_name = f"{pattern.lower()}_data_complete"
+        has_flag_col = flag_col_name in df.columns
+        
         # Only normalize rows that have actual data (not all NaN)
         has_data = df[columns].notna().any(axis=1)
         problematic = (row_sums < self.NORMALISATION_LOWER) | (
@@ -654,10 +669,16 @@ class WikipediaPollingScaper:
         )
         # Only normalize rows that have data AND are outside range
         problematic = problematic & has_data
+        
+        # If we have a completeness flag, only normalize complete data
+        if has_flag_col:
+            # Only normalize if data is marked as complete
+            is_complete = df[flag_col_name].fillna(True)  # Assume complete if flag missing
+            problematic = problematic & is_complete
 
         if problematic.any():
             logger.warning(
-                "Found %d rows that need to be normalised for pattern '%s'",
+                "Found %d rows with complete data that need to be normalised for pattern '%s'",
                 problematic.sum(),
                 pattern,
             )
