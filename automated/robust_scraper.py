@@ -102,7 +102,10 @@ class RobustScraper:
 
         # Selectors for betting odds/prices within each outcome
         self.price_selectors = [
-            "div.priceText_f71sibe",  # Primary: specific price text element
+            'span[class*="ButtonOddsStandardText"]',  # New selector for odds text in button
+            'button[class*="ButtonOddsStandard"]',  # Button containing odds
+            "div.defaultOddsMargin_f1kcyemd",  # Specific div with odds
+            "div.priceText_f71sibe",  # Legacy: specific price text element
             'div[class*="price"]',  # Fallback: any div with "price" in class
             'span[class*="price"]',  # Alternative: span elements with "price"
             'div[class*="odds"]',  # Last resort: any div with "odds" in class
