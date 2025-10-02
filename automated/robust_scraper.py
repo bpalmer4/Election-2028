@@ -41,7 +41,7 @@ class RobustScraper:
     every few months when Sportsbet creates new betting markets.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Chrome WebDriver instance - initialized later in setup_driver()
         self.driver: webdriver.Chrome | None = None
 
@@ -467,7 +467,7 @@ class RobustScraper:
             logger.error(f"Failed to save data: {e}")
             return False
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """Clean up Chrome WebDriver resources.
 
         This method should always be called to prevent memory leaks and

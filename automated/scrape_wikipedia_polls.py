@@ -13,7 +13,6 @@ from pathlib import Path
 from dataclasses import dataclass
 from io import StringIO
 import pandas as pd
-import numpy as np
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -705,7 +704,9 @@ class WikipediaPollingScaper:
             has_any_data = df_copy.notna().any(axis=1)
             all_present = df_copy.notna().all(axis=1)
             total = df_copy.sum(axis=1)
-            outside_range = (total < self.NORMALISATION_LOWER) | (total > self.NORMALISATION_UPPER)
+            outside_range = (total < self.NORMALISATION_LOWER) | (
+                total > self.NORMALISATION_UPPER
+            )
             # Problematic if: (has data but incomplete) OR (complete but outside range)
             return (has_any_data & ~all_present) | (all_present & outside_range)
 

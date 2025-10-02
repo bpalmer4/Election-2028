@@ -1,5 +1,5 @@
 #!/bin/zsh
-#crontab: 57 6 * * * /Users/bryanpalmer/Election-2028/automated/election-winner.sh
+#crontab: 57 6 * * * /Users/bryanpalmer/Election-2028/automated/betting-market-check.sh
 
 # set-up parameters
 home=/Users/bryanpalmer
@@ -17,7 +17,7 @@ source $home/$project/.venv/bin/activate
 cd $project/$working
 
 #initiate the data capture with robust scraper  
-python ./$runrun >>winner-log.log 2>>winner-err.log
+python ./$runrun >>z-betting-log.log 2>>z-betting-err.log
 
 # Only commit and push if scraper succeeded (exit code 0)
 if [ $? -eq 0 ]; then
