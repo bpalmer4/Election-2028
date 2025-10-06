@@ -65,19 +65,12 @@ def get_poll_changes(
 
 
 def get_previous_poll_data():
-    """Get poll dataframes from previous files (excluding today's)."""
-    from datetime import date
-
+    """Get poll dataframes from most recent saved files."""
     poll_dir = Path(__file__).parent.parent / "poll-data"
-    today = date.today().strftime("%Y-%m-%d")
 
-    # Find most recent files excluding today's
-    vi_files = sorted(
-        [f for f in poll_dir.glob("voting_intention_*.csv") if today not in f.name]
-    )
-    pm_files = sorted(
-        [f for f in poll_dir.glob("preferred_pm_*.csv") if today not in f.name]
-    )
+    # Find most recent files
+    vi_files = sorted(poll_dir.glob("voting_intention_*.csv"))
+    pm_files = sorted(poll_dir.glob("preferred_pm_*.csv"))
 
     old_vi_df = pd.DataFrame()
     old_pm_df = pd.DataFrame()
