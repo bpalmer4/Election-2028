@@ -1,9 +1,9 @@
 [project]
-name = "australian-federal-election-2028"
+name = "Election-2028"
 version = "0.0.0"
 description = "Australian Federal Election 2028"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     # - Jupyter notebooks
     "jupyter",
