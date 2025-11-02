@@ -723,6 +723,13 @@ class WikipediaPollingScaper:
             logger.warning("No data extracted from tables")
             return pd.DataFrame()
 
+        # Handle inconsistent column names - use "Firm" if "Brand" doesn't exist
+        if (
+            "Brand" not in raw_extracted_df.columns
+            and "Firm" in raw_extracted_df.columns
+        ):
+            raw_extracted_df = raw_extracted_df.rename(columns={"Firm": "Brand"})
+
         # - delete information rows - where the Brand value is the same as the Interview mode
         processed_df = raw_extracted_df[
             raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"]
