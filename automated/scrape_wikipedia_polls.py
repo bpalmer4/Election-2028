@@ -731,9 +731,13 @@ class WikipediaPollingScaper:
             raw_extracted_df = raw_extracted_df.rename(columns={"Firm": "Brand"})
 
         # - delete information rows - where the Brand value is the same as the Interview mode
-        processed_df = raw_extracted_df[
-            raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"]
-        ].copy()
+        # (only if Interview mode column exists)
+        if "Interview mode" in raw_extracted_df.columns:
+            processed_df = raw_extracted_df[
+                raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"]
+            ].copy()
+        else:
+            processed_df = raw_extracted_df.copy()
 
         # - strip square bracket footnotes from every column
         for col in processed_df.columns:
@@ -809,9 +813,13 @@ class WikipediaPollingScaper:
             raw_extracted_df = raw_extracted_df.rename(columns={"Firm": "Brand"})
 
         # - delete information rows - where the Brand value is the same as the Interview mode
-        processed_df = raw_extracted_df[
-            raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"]
-        ].copy()
+        # (only if Interview mode column exists)
+        if "Interview mode" in raw_extracted_df.columns:
+            processed_df = raw_extracted_df[
+                raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"]
+            ].copy()
+        else:
+            processed_df = raw_extracted_df.copy()
 
         # - strip square bracket footnotes from every column
         for col in processed_df.columns:
