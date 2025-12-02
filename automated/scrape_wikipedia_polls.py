@@ -731,13 +731,17 @@ class WikipediaPollingScaper:
             raw_extracted_df = raw_extracted_df.rename(columns={"Firm": "Brand"})
 
         # - delete information rows - where the Brand value is the same as the Interview mode
+        # or where Brand is NaN (empty header rows)
         # (only if Interview mode column exists)
         if "Interview mode" in raw_extracted_df.columns:
             processed_df = raw_extracted_df[
-                raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"]
+                (raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"])
+                & (raw_extracted_df["Brand"].notna())
             ].copy()
         else:
-            processed_df = raw_extracted_df.copy()
+            processed_df = raw_extracted_df[
+                raw_extracted_df["Brand"].notna()
+            ].copy()
 
         # - strip square bracket footnotes from every column
         for col in processed_df.columns:
@@ -813,13 +817,17 @@ class WikipediaPollingScaper:
             raw_extracted_df = raw_extracted_df.rename(columns={"Firm": "Brand"})
 
         # - delete information rows - where the Brand value is the same as the Interview mode
+        # or where Brand is NaN (empty header rows)
         # (only if Interview mode column exists)
         if "Interview mode" in raw_extracted_df.columns:
             processed_df = raw_extracted_df[
-                raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"]
+                (raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"])
+                & (raw_extracted_df["Brand"].notna())
             ].copy()
         else:
-            processed_df = raw_extracted_df.copy()
+            processed_df = raw_extracted_df[
+                raw_extracted_df["Brand"].notna()
+            ].copy()
 
         # - strip square bracket footnotes from every column
         for col in processed_df.columns:
