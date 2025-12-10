@@ -11,6 +11,10 @@ __pycache__/
 # MacOS stuff to be ignored
 .DS_Store
 
+# vscode
+.vscode
+
+
 # unnecessary detail to be ignored
 charts/**
 data/**
