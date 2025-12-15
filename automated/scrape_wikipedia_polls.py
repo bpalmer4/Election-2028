@@ -94,7 +94,7 @@ class URLHandler:
     def get_table_list(self, url: str) -> list[pd.DataFrame]:
         """Return a list of tables found at a URL. Tables are returned in pandas DataFrame format."""
         html = self.get_url(url)
-        df_list = pd.read_html(StringIO(html))
+        df_list = pd.read_html(StringIO(html), header=[0, 1])
         ensure(
             len(df_list) > 0, "No tables found at URL"
         )  # check we have at least one table
@@ -942,8 +942,8 @@ def main():
                     logger.info("Voting Intention - Total polls: %d", len(vi_df))
                     logger.info(
                         "Date range: %s to %s",
-                        vi_df["parsed_date"].min().strftime("%Y-%m-%d"),
-                        vi_df["parsed_date"].max().strftime("%Y-%m-%d"),
+                        vi_df["parsed_date"].dropna().min().strftime("%Y-%m-%d"),
+                        vi_df["parsed_date"].dropna().max().strftime("%Y-%m-%d"),
                     )
                     logger.info("Polling firms: %d", vi_df["Brand"].nunique())
 
@@ -951,8 +951,8 @@ def main():
                     logger.info("Attitudinal - Total polls: %d", len(pm_df))
                     logger.info(
                         "Date range: %s to %s",
-                        pm_df["parsed_date"].min().strftime("%Y-%m-%d"),
-                        pm_df["parsed_date"].max().strftime("%Y-%m-%d"),
+                        pm_df["parsed_date"].dropna().min().strftime("%Y-%m-%d"),
+                        pm_df["parsed_date"].dropna().max().strftime("%Y-%m-%d"),
                     )
             else:
                 logger.error("No polling data found for %s", election)
