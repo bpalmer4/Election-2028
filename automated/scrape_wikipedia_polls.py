@@ -10,6 +10,7 @@ import re
 import logging
 import datetime
 from pathlib import Path
+from collections.abc import Callable
 from dataclasses import dataclass
 from io import StringIO
 import pandas as pd
@@ -91,10 +92,12 @@ class URLHandler:
             logger.error("Failed to fetch URL %s: %s", url, e)
             raise
 
-    def get_table_list(self, url: str) -> list[pd.DataFrame]:
+    def get_table_list(
+        self, url: str, header: list[int] | int = [0, 1]
+    ) -> list[pd.DataFrame]:
         """Return a list of tables found at a URL. Tables are returned in pandas DataFrame format."""
         html = self.get_url(url)
-        df_list = pd.read_html(StringIO(html), header=[0, 1])
+        df_list = pd.read_html(StringIO(html), header=header)
         ensure(
             len(df_list) > 0, "No tables found at URL"
         )  # check we have at least one table
@@ -131,20 +134,22 @@ class DateParser:
     MIN_VALID_YEAR = 2025
     MAX_VALID_YEAR = 2028
 
-    MONTHS = {
-        "jan": "01",
-        "feb": "02",
-        "mar": "03",
-        "apr": "04",
-        "may": "05",
-        "jun": "06",
-        "jul": "07",
-        "aug": "08",
-        "sep": "09",
-        "oct": "10",
-        "nov": "11",
-        "dec": "12",
+    # Month info: (month_number, days_in_month)
+    MONTH_INFO: dict[str, tuple[str, int]] = {
+        "jan": ("01", 31),
+        "feb": ("02", 28),
+        "mar": ("03", 31),
+        "apr": ("04", 30),
+        "may": ("05", 31),
+        "jun": ("06", 30),
+        "jul": ("07", 31),
+        "aug": ("08", 31),
+        "sep": ("09", 30),
+        "oct": ("10", 31),
+        "nov": ("11", 30),
+        "dec": ("12", 31),
     }
+    MONTHS = {k: v[0] for k, v in MONTH_INFO.items()}
 
     @staticmethod
     def numericise(value: str) -> str:
@@ -193,114 +198,69 @@ class DateParser:
         )
 
     @classmethod
+    def _is_leap_year(cls, year: int) -> bool:
+        """Check if a year is a leap year."""
+        return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+    @classmethod
     def validate_date(cls, sd: StringDateItems) -> StringDateItems | None:
         """Validate the date components."""
-        # Validate year with better error messages
-        if not sd.year:
-            logger.debug("Date validation failed: missing year component")
-            return None
-        if not sd.year.isdigit():
-            logger.debug("Date validation failed: year '%s' is not numeric", sd.year)
-            return None
-
         try:
+            # Validate year
+            if not sd.year or not sd.year.isdigit():
+                return None
             y = int(sd.year)
             if y <= cls.TWO_DIGIT_YEAR_THRESHOLD:
-                sd.year = f"20{sd.year}" if y < cls.CENTURY_CUTOFF else f"19{sd.year}"
-                y = int(sd.year)
-            if y < cls.MIN_VALID_YEAR or y > cls.MAX_VALID_YEAR:
-                logger.debug(
-                    "Date validation failed: year %d outside expected range (%d-%d)",
-                    y,
-                    cls.MIN_VALID_YEAR,
-                    cls.MAX_VALID_YEAR,
-                )
+                y = int(f"20{sd.year}" if y < cls.CENTURY_CUTOFF else f"19{sd.year}")
+            if not cls.MIN_VALID_YEAR <= y <= cls.MAX_VALID_YEAR:
                 return None
             year = f"{y:04d}"
-        except ValueError as e:
-            logger.debug(
-                "Date validation failed: cannot convert year '%s' to integer: %s",
-                sd.year,
-                e,
-            )
-            return None
 
-        # Validate month with better error messages
-        try:
+            # Validate month
             if sd.month.isdigit():
                 m = int(sd.month)
-                if 1 <= m <= 12:
-                    rmonths = {int(v): k for k, v in cls.MONTHS.items()}
-                    sd.month = rmonths[m]
-                else:
-                    logger.debug(
-                        "Date validation failed: numeric month %d outside range 1-12", m
-                    )
+                if not 1 <= m <= 12:
                     return None
-
+                rmonths = {int(v[0]): k for k, v in cls.MONTH_INFO.items()}
+                sd.month = rmonths[m]
             month = sd.month[:3].lower()
-            if month not in cls.MONTHS:
-                logger.debug(
-                    "Date validation failed: month '%s' not recognized (expected: %s)",
-                    sd.month,
-                    list(cls.MONTHS.keys()),
-                )
+            if month not in cls.MONTH_INFO:
                 return None
-        except (ValueError, AttributeError) as e:
-            logger.debug(
-                "Date validation failed: error processing month '%s': %s", sd.month, e
-            )
-            return None
 
-        # Validate day with better error messages
-        days = {
-            "jan": 31,
-            "feb": 28,
-            "mar": 31,
-            "apr": 30,
-            "may": 31,
-            "jun": 30,
-            "jul": 31,
-            "aug": 31,
-            "sep": 30,
-            "oct": 31,
-            "nov": 30,
-            "dec": 31,
-        }
-
-        try:
-            # Check for leap year
-            if (
-                month == "feb"
-                and int(year) % 4 == 0
-                and (int(year) % 100 != 0 or int(year) % 400 == 0)
-            ):
-                days["feb"] = 29
-
+            # Validate day
             if not sd.day.isdigit():
-                logger.debug("Date validation failed: day '%s' is not numeric", sd.day)
+                return None
+            d = int(sd.day)
+            max_days = cls.MONTH_INFO[month][1]
+            if month == "feb" and cls._is_leap_year(y):
+                max_days = 29
+            if not 1 <= d <= max_days:
                 return None
 
-            d = int(sd.day)
-            if d < 1 or d > days[month]:
-                logger.debug(
-                    "Date validation failed: day %d invalid for %s (max: %d)",
-                    d,
-                    month,
-                    days[month],
-                )
-                return None
-            day = f"{d:02d}"
-        except (ValueError, KeyError) as e:
-            logger.debug(
-                "Date validation failed: error processing day '%s' for month '%s': %s",
-                sd.day,
-                month,
-                e,
-            )
+            return StringDateItems(day=f"{d:02d}", month=month, year=year)
+        except (ValueError, KeyError, AttributeError):
             return None
 
-        return StringDateItems(day=day, month=month, year=year)
+    @classmethod
+    def _to_date(cls, sd: StringDateItems) -> datetime.date | None:
+        """Convert validated StringDateItems to datetime.date."""
+        try:
+            return datetime.date(int(sd.year), int(cls.MONTHS[sd.month]), int(sd.day))
+        except (ValueError, KeyError):
+            return None
+
+    @classmethod
+    def _parse_validate_convert(
+        cls, date_str: str, month: str = "", year: str = ""
+    ) -> datetime.date | None:
+        """Parse, validate, and convert a date string to datetime.date."""
+        parsed = cls.parse_date_component(date_str, month, year)
+        if parsed is None:
+            return None
+        validated = cls.validate_date(parsed)
+        if validated is None:
+            return None
+        return cls._to_date(validated)
 
     @classmethod
     def parse_date_range(cls, date: str) -> datetime.date | None:
@@ -314,82 +274,36 @@ class DateParser:
         iso = r"(\d{4})-(\d{2})-(\d{2})"
         while groups := re.search(iso, date):
             year, month, day = groups.groups()
-            replacement = f"{day} {month} {year}"
-            date = re.sub(iso, replacement, date, count=1)
+            date = re.sub(iso, f"{day} {month} {year}", date, count=1)
 
-        # Fix common issues with date strings
-        fix_dict = {
-            cls.COMMA: " ",
-            cls.SLASH: " ",
-            cls.NON_BREAKING_SPACE: " ",
-            cls.ENDASH: "-",
-            cls.EMDASH: "-",
-            cls.HYPHEN: "-",
-            cls.MINUS: "-",
-        }
-        for fix, replacement in fix_dict.items():
-            date = date.replace(fix, replacement)
+        # Normalize separators
+        for char in (cls.COMMA, cls.SLASH, cls.NON_BREAKING_SPACE):
+            date = date.replace(char, " ")
+        for char in (cls.ENDASH, cls.EMDASH, cls.HYPHEN, cls.MINUS):
+            date = date.replace(char, "-")
 
         date = date.replace("--", "-")
         date_list = date.split("-")
-        if len(date_list) > 2 or len(date_list) < 1:
-            logger.debug("Malformed date: %s", date)
+        if not 1 <= len(date_list) <= 2:
             return None
 
-        # Parse the back date
-        back_date = cls.parse_date_component(date_list[-1])
-        if back_date is None:
-            logger.debug("Malformed date: %s", date)
+        # Parse and validate back date (end of range)
+        back = cls.parse_date_component(date_list[-1])
+        if back is None or (back := cls.validate_date(back)) is None:
             return None
-
-        back_date = cls.validate_date(back_date)
-        if back_date is None:
-            logger.debug("Invalid date: %s", date)
-            return None
-
-        # Convert to datetime
-        try:
-            last_dt = datetime.date(
-                int(back_date.year),
-                int(cls.MONTHS[back_date.month]),
-                int(back_date.day),
-            )
-        except (ValueError, KeyError) as e:
-            logger.debug("Failed to create datetime: %s", e)
+        last_dt = cls._to_date(back)
+        if last_dt is None:
             return None
 
         if len(date_list) == 1:
             return last_dt
 
-        front_date = cls.parse_date_component(
-            date_list[0], month=back_date.month, year=back_date.year
-        )
-        if front_date is None:
-            logger.debug("Malformed date: %s", date)
+        # Parse front date using back date's month/year as defaults
+        first_dt = cls._parse_validate_convert(date_list[0], back.month, back.year)
+        if first_dt is None or first_dt > last_dt:
             return None
 
-        front_date = cls.validate_date(front_date)
-        if front_date is None:
-            logger.debug("Invalid date: %s", date)
-            return None
-
-        try:
-            first_dt = datetime.date(
-                int(front_date.year),
-                int(cls.MONTHS[front_date.month]),
-                int(front_date.day),
-            )
-        except (ValueError, KeyError) as e:
-            logger.debug("Failed to create datetime: %s", e)
-            return None
-
-        if first_dt > last_dt:
-            logger.debug("Invalid date range: %s", date)
-            return None
-
-        # Return the midpoint
-        midpoint = first_dt + (last_dt - first_dt) / 2
-        return midpoint
+        return first_dt + (last_dt - first_dt) / 2
 
     @classmethod
     def parse_series(cls, series: pd.Series) -> pd.Series:
@@ -423,6 +337,59 @@ class WikipediaPollingScaper:
         pattern = re.compile(r"\[.+\]")
         flat = [re.sub(pattern, "", s) for s in flatter]  # remove footnotes
         return flat
+
+    @staticmethod
+    def fix_satisfaction_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """Fix satisfaction table columns that have 'Unnamed' in level 1.
+
+        Wikipedia satisfaction tables have sub-headers (Pos./Neg./DK/Net) in row 0,
+        not in the column multi-index. This method renames columns using those values.
+        """
+        # Map Wikipedia sub-headers to our standard column names
+        subheader_map = {
+            "pos.": "Satisfied",
+            "neg.": "Dissatisfied",
+            "dk": "Don't know",
+            "net": "Net",
+        }
+
+        # Check if we have "Unnamed" columns that need fixing
+        unnamed_cols = [c for c in df.columns if "unnamed" in c.lower()]
+        if not unnamed_cols:
+            return df
+
+        # The first data row might contain sub-headers like "Pos.", "Neg.", etc.
+        # Check the first few rows to find the sub-header row
+        for row_idx in range(min(3, len(df))):
+            row = df.iloc[row_idx]
+            # Check if this row has sub-header values
+            has_subheaders = any(
+                str(v).lower().strip().rstrip(".") in ["pos", "neg", "dk", "net"]
+                for v in row.values
+                if pd.notna(v)
+            )
+            if has_subheaders:
+                # Build column rename mapping
+                renames = {}
+                for col in unnamed_cols:
+                    val = str(row[col]).lower().strip() if pd.notna(row[col]) else ""
+                    if val in subheader_map:
+                        # Extract leader name from column (e.g., "Albanese Unnamed: 3_level_1" -> "Albanese")
+                        leader = col.split()[0] if " " in col else col
+                        renames[col] = f"{leader} {subheader_map[val]}"
+
+                if renames:
+                    df = df.rename(columns=renames)
+                    logger.info(
+                        "Fixed %d satisfaction columns from row %d",
+                        len(renames),
+                        row_idx,
+                    )
+                    # Drop the sub-header row and any duplicate header rows
+                    df = df.iloc[row_idx + 1 :].reset_index(drop=True)
+                break
+
+        return df
 
     @staticmethod
     def get_combined_table(
@@ -488,13 +455,17 @@ class WikipediaPollingScaper:
             raise
 
     def get_polling_table_indices(
-        self, df_list: list[pd.DataFrame], must_have: list[str] | None = None
+        self,
+        df_list: list[pd.DataFrame],
+        must_have: list[str] | None = None,
+        any_of: list[str] | None = None,
     ) -> list[int] | None:
         """Get indices of tables that are likely to contain polling data matching the specified patterns.
 
         Args:
             df_list: List of DataFrames from Wikipedia page
-            must_have: List of patterns that must be present in column names (default: ["primary", "2pp"])
+            must_have: List of patterns that must ALL be present in column names (AND logic)
+            any_of: List of patterns where ANY can be present (OR logic) - used instead of must_have
 
         Assumptions:
         - There may be some initial tables that are a prelude or introduction, and they should be skipped.
@@ -504,7 +475,7 @@ class WikipediaPollingScaper:
 
         table_indices: list[int] = []
         prelude = True
-        if must_have is None:
+        if must_have is None and any_of is None:
             must_have = ["primary", "2pp"]
         for i, df in enumerate(df_list):
             # --- does this look like polling data?
@@ -514,9 +485,17 @@ class WikipediaPollingScaper:
                 skip = True
             else:
                 level_0 = df.columns.get_level_values(0).str.lower()
-                for check in must_have:
-                    if not any(check in label for label in level_0):
+                if any_of is not None:
+                    # OR logic: skip if NONE of the patterns match
+                    if not any(
+                        any(pattern in label for label in level_0) for pattern in any_of
+                    ):
                         skip = True
+                elif must_have is not None:
+                    # AND logic: skip if ANY pattern doesn't match
+                    for check in must_have:
+                        if not any(check in label for label in level_0):
+                            skip = True
             if skip and prelude:
                 continue  # skip any prelude tables
             if skip and not prelude:
@@ -536,14 +515,17 @@ class WikipediaPollingScaper:
         return table_indices
 
     def get_tables_simple(
-        self, table_indices: list[int] | None = None, must_have: list[str] | None = None
+        self,
+        table_indices: list[int] | None = None,
+        must_have: list[str] | None = None,
+        any_of: list[str] | None = None,
     ) -> pd.DataFrame | None:
         """Get national polling tables using the simple approach with manual table selection."""
         try:
             df_list = self.url_handler.get_table_list(self.url)
             logger.info("Found %d tables on Wikipedia page", len(df_list))
             table_indices = (
-                self.get_polling_table_indices(df_list, must_have)
+                self.get_polling_table_indices(df_list, must_have, any_of)
                 if table_indices is None
                 else table_indices
             )
@@ -553,6 +535,17 @@ class WikipediaPollingScaper:
             logger.error("Failed to get tables: %s", e)
             return None
 
+    @staticmethod
+    def _get_pattern_columns(
+        df: pd.DataFrame, pattern: str, exclude: str = "net"
+    ) -> pd.Index:
+        """Get columns matching pattern, excluding specified substring."""
+        return pd.Index(
+            c
+            for c in df.columns
+            if pattern.lower() in c.lower() and exclude.lower() not in c.lower()
+        )
+
     def check_completeness(
         self, pattern: str, lower: int, upper: int, df: pd.DataFrame
     ) -> pd.DataFrame:
@@ -560,11 +553,7 @@ class WikipediaPollingScaper:
 
         Logs warnings about partial/incomplete data but keeps all data."""
 
-        columns = pd.Index(
-            c
-            for c in df.columns
-            if pattern.lower() in c.lower() and "net" not in c.lower()
-        )
+        columns = self._get_pattern_columns(df, pattern)
         if len(columns) == 0:
             logger.warning("No columns found matching pattern '%s'", pattern)
             return df
@@ -650,11 +639,7 @@ class WikipediaPollingScaper:
         Rows with any missing values are skipped. This is different from distribute_undecideds
         which works with partial data."""
 
-        columns = pd.Index(
-            c
-            for c in df.columns
-            if pattern.lower() in c.lower() and "net" not in c.lower()
-        )
+        columns = self._get_pattern_columns(df, pattern)
         if len(columns) == 0:
             logger.warning("No columns found matching pattern '%s'", pattern)
             return df
@@ -684,6 +669,52 @@ class WikipediaPollingScaper:
                     df.loc[problematic, col] / row_sums.loc[problematic] * 100
                 )
         return df.copy()
+
+    def _preprocess_table(
+        self,
+        raw_df: pd.DataFrame,
+        numeric_col_filter: Callable[[str], bool],
+    ) -> pd.DataFrame:
+        """Common preprocessing for scraped tables.
+
+        Args:
+            raw_df: Raw DataFrame from table extraction
+            numeric_col_filter: Function that takes column name and returns True if
+                               the column should be converted to numeric
+        """
+        if raw_df is None or raw_df.empty:
+            return pd.DataFrame()
+
+        # Handle inconsistent column names - use "Firm" if "Brand" doesn't exist
+        if "Brand" not in raw_df.columns and "Firm" in raw_df.columns:
+            raw_df = raw_df.rename(columns={"Firm": "Brand"})
+
+        # Delete information rows - where Brand equals Interview mode or Brand is NaN
+        if "Interview mode" in raw_df.columns:
+            df = raw_df[
+                (raw_df["Brand"] != raw_df["Interview mode"])
+                & (raw_df["Brand"].notna())
+            ].copy()
+        else:
+            df = raw_df[raw_df["Brand"].notna()].copy()
+
+        # Strip square bracket footnotes from every object column
+        for col in df.columns:
+            if df[col].dtype == "object":
+                df[col] = (
+                    df[col].str.replace(r"\[[a-z0-9]+\]", "", regex=True).str.strip()
+                )
+
+        # Remove percents and convert to numeric for specified columns
+        for col in df.columns:
+            if numeric_col_filter(col) and df[col].dtype == "object":
+                df[col] = df[col].str.replace("%", "", regex=True).str.strip()
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        # Parse dates
+        df["parsed_date"] = DateParser.parse_series(df["Date"])
+
+        return df.reset_index(drop=True)
 
     def flag_problematic_polls(self, df: pd.DataFrame) -> pd.DataFrame:
         """Flag polls with incomplete data OR that don't sum to 99-101 after normalization.
@@ -723,50 +754,16 @@ class WikipediaPollingScaper:
             logger.warning("No data extracted from tables")
             return pd.DataFrame()
 
-        # Handle inconsistent column names - use "Firm" if "Brand" doesn't exist
-        if (
-            "Brand" not in raw_extracted_df.columns
-            and "Firm" in raw_extracted_df.columns
-        ):
-            raw_extracted_df = raw_extracted_df.rename(columns={"Firm": "Brand"})
+        # Preprocess: rename columns, filter rows, strip footnotes, convert numeric, parse dates
+        processed_df = self._preprocess_table(
+            raw_extracted_df,
+            numeric_col_filter=lambda c: "vote" in c.lower() or "size" in c.lower(),
+        )
 
-        # - delete information rows - where the Brand value is the same as the Interview mode
-        # or where Brand is NaN (empty header rows)
-        # (only if Interview mode column exists)
-        if "Interview mode" in raw_extracted_df.columns:
-            processed_df = raw_extracted_df[
-                (raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"])
-                & (raw_extracted_df["Brand"].notna())
-            ].copy()
-        else:
-            processed_df = raw_extracted_df[
-                raw_extracted_df["Brand"].notna()
-            ].copy()
+        if processed_df.empty:
+            return pd.DataFrame()
 
-        # - strip square bracket footnotes from every column
-        for col in processed_df.columns:
-            if processed_df[col].dtype == "object":
-                processed_df[col] = (
-                    processed_df[col]
-                    .str.replace(r"\[[a-z0-9]+\]", "", regex=True)
-                    .str.strip()
-                )
-
-        # - remove percents from all "vote" columns. and make those columns numeric
-        for col in processed_df.columns:
-            if ("vote" in col.lower() or "size" in col.lower()) and processed_df[
-                col
-            ].dtype == "object":
-                processed_df[col] = (
-                    processed_df[col].str.replace("%", "", regex=True).str.strip()
-                )
-                processed_df[col] = pd.to_numeric(processed_df[col], errors="coerce")
-
-        # - parse dates
-        processed_df["parsed_date"] = DateParser.parse_series(processed_df["Date"])
-
-        # - check for completeness
-        processed_df = processed_df.reset_index(drop=True)
+        # Check for completeness
         processed_df = self.check_completeness(
             pattern="Primary",
             lower=self.PRIMARY_VOTE_LOWER,
@@ -801,63 +798,66 @@ class WikipediaPollingScaper:
         self, table_indices: list[int] | None = None
     ) -> pd.DataFrame:
         """Scrape attitudinal and leadership polling data using the simple table extraction approach."""
-        raw_extracted_df = self.get_tables_simple(
-            table_indices, must_have=["prime minister"]
-        )
+        # Get Party leaders table (preferred PM)
+        pm_df = self.get_tables_simple(table_indices, must_have=["party leaders"])
+
+        # Get Satisfaction table (Albanese/Ley satisfaction)
+        sat_df = self.get_tables_simple(table_indices, any_of=["albanese", "ley"])
+        if sat_df is not None:
+            sat_df = self.fix_satisfaction_columns(sat_df)
+
+        # Merge the tables on Date and Brand/Firm
+        if pm_df is not None and sat_df is not None and not sat_df.empty:
+            # Ensure both have Brand column
+            for df in [pm_df, sat_df]:
+                if "Firm" in df.columns and "Brand" not in df.columns:
+                    df.rename(columns={"Firm": "Brand"}, inplace=True)
+            raw_extracted_df = pd.merge(
+                pm_df, sat_df, on=["Date", "Brand", "Sample size"], how="outer"
+            )
+        elif pm_df is not None:
+            raw_extracted_df = pm_df
+        elif sat_df is not None:
+            raw_extracted_df = sat_df
+        else:
+            # Fall back to legacy format
+            raw_extracted_df = self.get_tables_simple(
+                table_indices, must_have=["prime minister"]
+            )
 
         if raw_extracted_df is None or raw_extracted_df.empty:
             logger.warning("No attitudinal polling data extracted from tables")
             return pd.DataFrame()
 
-        # Handle inconsistent column names - use "Firm" if "Brand" doesn't exist
-        if (
-            "Brand" not in raw_extracted_df.columns
-            and "Firm" in raw_extracted_df.columns
-        ):
-            raw_extracted_df = raw_extracted_df.rename(columns={"Firm": "Brand"})
+        # Rename "Party leaders" columns to "Preferred prime minister" for backward compatibility
+        col_renames = {
+            c: c.replace("Party leaders", "Preferred prime minister")
+            for c in raw_extracted_df.columns
+            if "Party leaders" in c
+        }
+        if col_renames:
+            raw_extracted_df = raw_extracted_df.rename(columns=col_renames)
 
-        # - delete information rows - where the Brand value is the same as the Interview mode
-        # or where Brand is NaN (empty header rows)
-        # (only if Interview mode column exists)
-        if "Interview mode" in raw_extracted_df.columns:
-            processed_df = raw_extracted_df[
-                (raw_extracted_df["Brand"] != raw_extracted_df["Interview mode"])
-                & (raw_extracted_df["Brand"].notna())
-            ].copy()
-        else:
-            processed_df = raw_extracted_df[
-                raw_extracted_df["Brand"].notna()
-            ].copy()
+        # Define filter for attitudinal columns
+        def is_attitudinal_col(col: str) -> bool:
+            col_lower = col.lower()
+            return (
+                "ley" in col_lower
+                or "albanese" in col_lower
+                or "prime minister" in col_lower
+                or "party leaders" in col_lower
+            )
 
-        # - strip square bracket footnotes from every column
-        for col in processed_df.columns:
-            if processed_df[col].dtype == "object":
-                processed_df[col] = (
-                    processed_df[col]
-                    .str.replace(r"\[[a-z0-9]+\]", "", regex=True)
-                    .str.strip()
-                )
+        # Preprocess: rename columns, filter rows, strip footnotes, convert numeric, parse dates
+        processed_df = self._preprocess_table(
+            raw_extracted_df,
+            numeric_col_filter=is_attitudinal_col,
+        )
 
-        # - remove percents from all columns and make them numeric
-        for col in processed_df.columns:
-            if (
-                "ley" in col.lower()
-                or "albanese" in col.lower()
-                or "prime minister" in col.lower()
-                and processed_df[col].dtype == "object"
-            ):
-                processed_df[col] = (
-                    processed_df[col].str.replace("%", "", regex=True).str.strip()
-                )
-                processed_df[col] = pd.to_numeric(processed_df[col], errors="coerce")
+        if processed_df.empty:
+            return pd.DataFrame()
 
-        # - parse dates
-        processed_df["parsed_date"] = DateParser.parse_series(processed_df["Date"])
-
-        # - check for completeness for each group (including "don't know")
-        processed_df = processed_df.reset_index(drop=True)
-
-        # Define the three groups with specific patterns
+        # Define the groups with specific patterns for completeness checking
         groups = ["Preferred prime minister", "Albanese ", "Ley "]
 
         # Check completeness for attitudinal polling
@@ -893,32 +893,24 @@ class WikipediaPollingScaper:
 
         return vi_df, pm_df
 
+    def _save_df(
+        self, df: pd.DataFrame, prefix: str, today: str, data_dir: Path
+    ) -> None:
+        """Save a DataFrame to CSV if not empty."""
+        if df.empty:
+            return
+        filepath = data_dir / f"{prefix}_{self.election_year}_{today}.csv"
+        df.to_csv(filepath, index=False)
+        logger.info("Saved %s data to %s", prefix, filepath)
+
     def save_data(self, vi_df: pd.DataFrame, pm_df: pd.DataFrame) -> None:
         """Save polling data to CSV files with today's date in filename."""
-        # Ensure poll-data directory exists
         data_dir = Path("../poll-data")
         data_dir.mkdir(exist_ok=True)
-
-        # Get today's date for filename
         today = datetime.datetime.now().strftime("%Y-%m-%d")
 
-        # Save voting intention data
-        if not vi_df.empty:
-            vi_df_to_save = vi_df.copy()
-
-            filename = f"voting_intention_{self.election_year}_{today}.csv"
-            filepath = data_dir / filename
-            vi_df_to_save.to_csv(filepath, index=False)
-            logger.info("Saved voting intention data to %s", filepath)
-
-        # Save attitudinaldata
-        if not pm_df.empty:
-            pm_df_to_save = pm_df.copy()
-
-            filename = f"preferred_pm_{self.election_year}_{today}.csv"
-            filepath = data_dir / filename
-            pm_df_to_save.to_csv(filepath, index=False)
-            logger.info("Saved attitudinaldata to %s", filepath)
+        self._save_df(vi_df, "voting_intention", today, data_dir)
+        self._save_df(pm_df, "preferred_pm", today, data_dir)
 
 
 # --- MAIN ---
