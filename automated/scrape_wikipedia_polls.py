@@ -317,12 +317,10 @@ class WikipediaPollingScaper:
     """Scraper for Australian federal election polling data from Wikipedia."""
 
     # Data validation thresholds
-    PRIMARY_VOTE_LOWER = 97
-    PRIMARY_VOTE_UPPER = 103
+    PRIMARY_VOTE_LOWER = 98
+    PRIMARY_VOTE_UPPER = 102
     TPP_VOTE_LOWER = 99
     TPP_VOTE_UPPER = 101
-    NORMALISATION_LOWER = 99
-    NORMALISATION_UPPER = 101
     ATTITUDINAL_VOTE_LOWER = 99
     ATTITUDINAL_VOTE_UPPER = 101
 
@@ -628,14 +626,15 @@ class WikipediaPollingScaper:
             ) * df.loc[und_rows, und_col]
         return df.drop(columns=und_col).copy()  # drop the undecided column
 
-    def normalise_poll_data(self, df: pd.DataFrame, pattern: str) -> pd.DataFrame:
+    def normalise_poll_data(
+        self, df: pd.DataFrame, pattern: str, lower: int, upper: int
+    ) -> pd.DataFrame:
         """Normalise polling data by ensuring all columns matching the pattern sum to 100%.
 
-        Normalizes rows when:
-        1. All columns have data present (no NaN values)
-        2. Sum is outside the 99-101 range
+        For rows where ALL columns have data:
+        - If sum is within [lower, upper]: normalize to 100%
+        - If sum is outside [lower, upper]: set values to NaN (unreliable data)
 
-        IMPORTANT: This function only operates on rows where ALL party columns have data.
         Rows with any missing values are skipped. This is different from distribute_undecideds
         which works with partial data."""
 
@@ -646,28 +645,38 @@ class WikipediaPollingScaper:
 
         row_sums = df[columns].sum(axis=1, skipna=True)
 
-        # Only normalize rows where ALL columns have data (no NaN values)
+        # Only operate on rows where ALL columns have data (no NaN values)
         all_columns_have_data = df[columns].notna().all(axis=1)
 
-        # And the sum is outside the normalization range
-        sum_outside_range = (row_sums < self.NORMALISATION_LOWER) | (
-            row_sums > self.NORMALISATION_UPPER
-        )
+        # Check if sum is within or outside acceptable range
+        within_range = (row_sums >= lower) & (row_sums <= upper)
 
-        # Normalize when both conditions are met
-        problematic = all_columns_have_data & sum_outside_range
-
-        if problematic.any():
-            logger.warning(
-                "Found %d rows with complete data that need to be normalised for pattern '%s'",
-                problematic.sum(),
+        # Normalize rows that are within range and have all data
+        to_normalize = all_columns_have_data & within_range
+        if to_normalize.any():
+            logger.info(
+                "Normalising %d rows to 100%% for pattern '%s'",
+                to_normalize.sum(),
                 pattern,
             )
             for col in columns:
-                # Normalise each column by dividing by the row sum and multiplying by 100
-                df.loc[problematic, col] = (
-                    df.loc[problematic, col] / row_sums.loc[problematic] * 100
+                df.loc[to_normalize, col] = (
+                    df.loc[to_normalize, col] / row_sums.loc[to_normalize] * 100
                 )
+
+        # NaN out rows that are outside range (unreliable data)
+        to_nan = all_columns_have_data & ~within_range
+        if to_nan.any():
+            logger.warning(
+                "Setting %d rows to NaN - sum outside [%d, %d] for pattern '%s'",
+                to_nan.sum(),
+                lower,
+                upper,
+                pattern,
+            )
+            for col in columns:
+                df.loc[to_nan, col] = pd.NA
+
         return df.copy()
 
     def _preprocess_table(
@@ -717,32 +726,45 @@ class WikipediaPollingScaper:
         return df.reset_index(drop=True)
 
     def flag_problematic_polls(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Flag polls with incomplete data OR that don't sum to 99-101 after normalization.
+        """Flag polls with incomplete data OR that don't sum to expected range.
+
+        - Complete data outside sum range: NaN the values AND flag problematic
+        - Incomplete data: Keep partial values AND flag problematic
 
         Treats missing IND (independents) values as 0 before checking completeness."""
 
-        def check_sum(pattern: str) -> pd.Series:
+        df = df.copy()
+
+        def check_and_nan_bad_sums(pattern: str, lower: int, upper: int) -> pd.Series:
             cols = [c for c in df.columns if pattern in c.lower()]
             if not cols:
                 return pd.Series(False, index=df.index)
 
             # Make a copy and fill IND column with 0 if it exists
-            df_copy = df[cols].copy()
+            df_check = df[cols].copy()
             ind_cols = [c for c in cols if "ind" in c.lower()]
             if ind_cols:
-                df_copy[ind_cols] = df_copy[ind_cols].fillna(0)
+                df_check[ind_cols] = df_check[ind_cols].fillna(0)
 
-            has_any_data = df_copy.notna().any(axis=1)
-            all_present = df_copy.notna().all(axis=1)
-            total = df_copy.sum(axis=1)
-            outside_range = (total < self.NORMALISATION_LOWER) | (
-                total > self.NORMALISATION_UPPER
-            )
+            has_any_data = df_check.notna().any(axis=1)
+            all_present = df_check.notna().all(axis=1)
+            total = df_check.sum(axis=1)
+            outside_range = (total < lower) | (total > upper)
+
+            # Complete but outside range: NaN the values
+            complete_bad_sum = all_present & outside_range
+            if complete_bad_sum.any():
+                df.loc[complete_bad_sum, cols] = np.nan
+
             # Problematic if: (has data but incomplete) OR (complete but outside range)
-            return (has_any_data & ~all_present) | (all_present & outside_range)
+            incomplete = has_any_data & ~all_present
+            return incomplete | complete_bad_sum
 
-        df["problematic"] = check_sum("primary") | check_sum("2pp")
-        return df.copy()
+        df["problematic"] = (
+            check_and_nan_bad_sums("primary", self.PRIMARY_VOTE_LOWER, self.PRIMARY_VOTE_UPPER)
+            | check_and_nan_bad_sums("2pp", self.TPP_VOTE_LOWER, self.TPP_VOTE_UPPER)
+        )
+        return df
 
     def scrape_voting_intention_polls(
         self, table_indices: list[int] | None = None
@@ -786,8 +808,18 @@ class WikipediaPollingScaper:
         )
 
         # - normalise
-        processed_df = self.normalise_poll_data(df=processed_df, pattern="primary")
-        processed_df = self.normalise_poll_data(df=processed_df, pattern="2pp")
+        processed_df = self.normalise_poll_data(
+            df=processed_df,
+            pattern="primary",
+            lower=self.PRIMARY_VOTE_LOWER,
+            upper=self.PRIMARY_VOTE_UPPER,
+        )
+        processed_df = self.normalise_poll_data(
+            df=processed_df,
+            pattern="2pp",
+            lower=self.TPP_VOTE_LOWER,
+            upper=self.TPP_VOTE_UPPER,
+        )
 
         # - flag problematic polls that still don't sum to 100
         processed_df = self.flag_problematic_polls(df=processed_df)
@@ -873,7 +905,12 @@ class WikipediaPollingScaper:
 
         # - normalise each group (excluding net columns)
         for group in groups:
-            processed_df = self.normalise_poll_data(df=processed_df, pattern=group)
+            processed_df = self.normalise_poll_data(
+                df=processed_df,
+                pattern=group,
+                lower=self.ATTITUDINAL_VOTE_LOWER,
+                upper=self.ATTITUDINAL_VOTE_UPPER,
+            )
 
         return processed_df
 
