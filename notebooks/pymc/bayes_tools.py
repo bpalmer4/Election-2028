@@ -533,3 +533,311 @@ def draw_samples(model: pm.Model, **kwargs) -> tuple[az.InferenceData, str]:
     issues = check_model_diagnostics(idata, verbose=True)
     glitches = f"Sampling issues: {', '.join(issues)}" if issues else ""
     return (idata, glitches)
+
+
+# --- Residual diagnostics for methodology changes
+MIN_POLLS_FOR_RESIDUAL_CHECK = 5
+RECENT_POLL_COUNT = 5  # number of most recent polls to highlight
+SIGMA_MULTIPLIER = 3  # number of standard deviations for outlier detection
+OUTLIER_PCT_THRESHOLD = 0.03  # flag if more than 3% outside (expect ~1% at 3σ)
+SIGNIFICANCE_LEVEL = 0.05  # p-value threshold for statistical tests
+
+
+def _plot_residuals(
+    firm_name: str,
+    firm_days: np.ndarray,
+    firm_residuals: np.ndarray,
+    sigma_mean: float,
+    day_zero: pd.Period,
+    column: str,
+    issues: list[str],
+    **kwargs,
+) -> None:
+    """Plot residuals over time with ±Nσ shading for a single pollster.
+
+    Args:
+        firm_name: Name of the pollster
+        firm_days: Array of day numbers for this pollster's polls
+        firm_residuals: Array of residuals for this pollster
+        sigma_mean: Model's sigma_likelihood (observation noise)
+        day_zero: The reference date (day 0)
+        column: The column being analysed (for title)
+        issues: List of issues detected for this pollster
+        show: If True, display the plot
+        **kwargs: Additional arguments passed to mg.finalise_plot
+    """
+    import matplotlib.pyplot as plt
+    import mgplot as mg
+
+    # Convert days to Period then to ordinals for matplotlib compatibility
+    periods = [day_zero + int(d) for d in firm_days]
+    x_ordinals = [p.ordinal for p in periods]
+
+    _, ax = plt.subplots(figsize=(9.0, 4.5))
+
+    # Shade ±Nσ region
+    sigma_band = SIGMA_MULTIPLIER * sigma_mean
+    ax.axhspan(-sigma_band, sigma_band, alpha=0.2, color="green", label=f"±{SIGMA_MULTIPLIER}σ")
+
+    # Plot zero line
+    ax.axhline(0, color="black", linestyle="-", linewidth=0.5)
+
+    # Plot residuals
+    ax.scatter(x_ordinals, firm_residuals, s=50, alpha=0.7, zorder=5)
+
+    # Mark outliers
+    outliers = np.abs(firm_residuals) > sigma_band
+    if outliers.any():
+        outlier_x = [x for x, o in zip(x_ordinals, outliers) if o]
+        outlier_resids = firm_residuals[outliers]
+        ax.scatter(
+            outlier_x,
+            outlier_resids,
+            s=80,
+            facecolors="none",
+            edgecolors="red",
+            linewidths=2,
+            label=f"Outside ±{SIGMA_MULTIPLIER}σ",
+            zorder=6,
+        )
+
+    # Add trend line using mg.line_plot (also sets x-axis date labels)
+    z = np.polyfit(firm_days, firm_residuals, 1)
+    poly = np.poly1d(z)
+    trend_values = poly(firm_days)
+    trend_series = pd.Series(trend_values, index=pd.PeriodIndex(periods, freq="D"))
+    trend_series.name = "Trend"
+    ax = mg.line_plot(trend_series, ax=ax, color="red", style="--", alpha=0.5)
+
+    # Build lfooter from issues
+    lfooter_text = "Issues: " + "; ".join(issues) if issues else ""
+
+    defaults = {
+        "title": f"Residuals: {firm_name} - {column}",
+        "xlabel": None,
+        "ylabel": "Residual (percentage points)",
+        "legend": {"loc": "best", "fontsize": "x-small"},
+        "lfooter": lfooter_text,
+        "show": False,
+    }
+    for key, value in defaults.items():
+        kwargs.setdefault(key, value)
+
+    mg.finalise_plot(ax, **kwargs)
+
+
+def check_residuals(
+    inputs: dict[str, Any],
+    trace: az.InferenceData,
+    verbose: bool = True,
+    plot_suspects: bool = True,
+    show: bool = True,
+    **kwargs,
+) -> pd.DataFrame:
+    """Check residuals by pollster to detect potential methodology changes.
+
+    For each pollster with at least MIN_POLLS_FOR_RESIDUAL_CHECK polls:
+    - Calculates residuals: observed - (voting_intention + house_effect)
+    - Checks if residuals are within ±Nσ (N=SIGMA_MULTIPLIER, using model's sigma_likelihood)
+    - Tests for heteroskedasticity (variance changing over time)
+    - Uses t-test to check for significant mean shift between first/second half
+    - Flags recent polls that are outliers
+
+    Args:
+        inputs: The prepared data dict from prepare_data_for_analysis()
+        trace: InferenceData from model fitting
+        verbose: If True, print diagnostic summary
+        plot_suspects: If True, plot residuals for suspect pollsters
+        show: If True, display the plots
+        **kwargs: Additional arguments passed to mg.finalise_plot for residual plots
+
+    Returns:
+        DataFrame with residual diagnostics per pollster, including:
+        - n_polls: number of polls from this pollster
+        - n_outside_3sd: count of residuals outside ±Nσ
+        - pct_outside_3sd: percentage outside
+        - het_pvalue: p-value for heteroskedasticity test
+        - recent_3s: count of recent polls outside ±3σ
+        - recent_2s: count of recent polls outside ±2σ
+        - mean_shift: difference in mean residual (2nd half - 1st half)
+        - mean_shift_pvalue: p-value from t-test comparing halves
+        - suspect: True if methodology change may be indicated
+    """
+    from scipy import stats
+
+    # Extract posterior means
+    vi_posterior = trace.posterior["voting_intention"]
+    vi_mean = vi_posterior.mean(dim=["chain", "draw"]).values
+
+    he_posterior = trace.posterior["house_effects"]
+    he_mean = he_posterior.mean(dim=["chain", "draw"]).values
+
+    sigma_posterior = trace.posterior["sigma_likelihood"]
+    sigma_mean = float(sigma_posterior.mean(dim=["chain", "draw"]).values)
+
+    # Determine if this is a GRW model (voting_intention indexed by day)
+    # or GP model (voting_intention indexed by poll)
+    is_grw = len(vi_mean) == inputs["n_days"] + 1
+
+    # Calculate residuals for each poll
+    poll_days = inputs["poll_day"].values
+    poll_firms = inputs["poll_firm_number"].values
+    observed = inputs["zero_centered_y"].values
+
+    if is_grw:
+        expected = vi_mean[poll_days] + he_mean[poll_firms]
+    else:
+        expected = vi_mean + he_mean[poll_firms]
+
+    residuals = observed - expected
+
+    # Build results by pollster
+    results = []
+    suspect_data = []  # Store data for plotting suspects
+
+    for firm_name in inputs["firm_list"]:
+        firm_num = inputs["firm_map"][firm_name]
+        mask = poll_firms == firm_num
+        n_polls = mask.sum()
+
+        if n_polls < MIN_POLLS_FOR_RESIDUAL_CHECK:
+            continue
+
+        firm_residuals = residuals[mask]
+        firm_days = poll_days[mask]
+
+        # Check proportion outside ±Nσ
+        sigma_band = SIGMA_MULTIPLIER * sigma_mean
+        outside_band = np.abs(firm_residuals) > sigma_band
+        n_outside = outside_band.sum()
+        pct_outside = n_outside / n_polls
+
+        # Test for heteroskedasticity using Breusch-Pagan-like approach
+        # Regress squared residuals on time (day number)
+        squared_resid = firm_residuals**2
+        slope, intercept, r_value, het_pvalue, std_err = stats.linregress(
+            firm_days, squared_resid
+        )
+
+        # Check recent polls for outliers
+        # Flag if 1+ at 3σ or 2+ at 2σ
+        firm_indices = np.where(mask)[0]
+        recent_indices = firm_indices[-RECENT_POLL_COUNT:]
+        recent_residuals = residuals[recent_indices]
+        recent_outside_3s = np.abs(recent_residuals) > 3 * sigma_mean
+        recent_outside_2s = np.abs(recent_residuals) > 2 * sigma_mean
+        n_recent_3s = recent_outside_3s.sum()
+        n_recent_2s = recent_outside_2s.sum()
+        recent_outlier_flag = (n_recent_3s >= 1) or (n_recent_2s >= 2)
+
+        # T-test for mean shift between first and second half
+        half = len(firm_residuals) // 2
+        first_half = firm_residuals[:half]
+        second_half = firm_residuals[half:]
+        mean_shift = second_half.mean() - first_half.mean()
+
+        # Use Welch's t-test (doesn't assume equal variances)
+        t_stat, mean_shift_pvalue = stats.ttest_ind(
+            first_half, second_half, equal_var=False
+        )
+
+        # Determine if suspect and collect issues
+        # Criteria:
+        # - More than OUTLIER_PCT_THRESHOLD outside Nσ
+        # - Heteroskedasticity p-value < SIGNIFICANCE_LEVEL
+        # - More than 1 recent outlier (out of RECENT_POLL_COUNT)
+        # - Mean shift t-test p-value < SIGNIFICANCE_LEVEL
+        issues: list[str] = []
+        if pct_outside > OUTLIER_PCT_THRESHOLD:
+            issues.append(f"{pct_outside:.0%} outside ±{SIGMA_MULTIPLIER}σ")
+        if het_pvalue < SIGNIFICANCE_LEVEL:
+            direction = "increasing" if slope > 0 else "decreasing"
+            issues.append(f"variance {direction} (p={het_pvalue:.3f})")
+        if recent_outlier_flag:
+            issues.append(f"recent: {n_recent_3s}@3σ, {n_recent_2s}@2σ")
+        if mean_shift_pvalue < SIGNIFICANCE_LEVEL:
+            issues.append(f"mean shift {mean_shift:+.2f} (p={mean_shift_pvalue:.3f})")
+
+        suspect = len(issues) > 0
+
+        results.append(
+            {
+                "pollster": firm_name,
+                "n_polls": n_polls,
+                "n_outside_3sd": n_outside,
+                "pct_outside_3sd": pct_outside,
+                "het_pvalue": het_pvalue,
+                "het_slope": slope,
+                "recent_3s": n_recent_3s,
+                "recent_2s": n_recent_2s,
+                "mean_shift": mean_shift,
+                "mean_shift_pvalue": mean_shift_pvalue,
+                "suspect": suspect,
+            }
+        )
+
+        if suspect:
+            suspect_data.append(
+                {
+                    "firm_name": firm_name,
+                    "firm_days": firm_days,
+                    "firm_residuals": firm_residuals,
+                    "issues": issues,
+                }
+            )
+
+    results_df = pd.DataFrame(results)
+
+    if verbose and len(results_df) > 0:
+        print("\n=== Residual Diagnostics by Pollster ===")
+        print(f"Model sigma_likelihood: {sigma_mean:.2f}")
+        print(f"Minimum polls required: {MIN_POLLS_FOR_RESIDUAL_CHECK}\n")
+
+        for _, row in results_df.iterrows():
+            flag = " ⚠️ SUSPECT" if row["suspect"] else ""
+            print(f"{row['pollster']} (n={row['n_polls']}){flag}")
+            print(
+                f"  Outside ±{SIGMA_MULTIPLIER}σ: {row['n_outside_3sd']}/{row['n_polls']} "
+                f"({row['pct_outside_3sd']:.1%})"
+            )
+            print(f"  Heteroskedasticity p-value: {row['het_pvalue']:.3f}", end="")
+            if row["het_pvalue"] < SIGNIFICANCE_LEVEL:
+                direction = "increasing" if row["het_slope"] > 0 else "decreasing"
+                print(f" (variance {direction})")
+            else:
+                print(" (homoskedastic)")
+            print(f"  Recent outliers: {row['recent_3s']}@3σ, {row['recent_2s']}@2σ (of {RECENT_POLL_COUNT})")
+            print(
+                f"  Mean shift: {row['mean_shift']:+.2f} "
+                f"(t-test p={row['mean_shift_pvalue']:.3f})"
+            )
+            print()
+
+        suspects = results_df[results_df["suspect"]]
+        if len(suspects) > 0:
+            print(
+                f"⚠️  {len(suspects)} pollster(s) flagged for potential "
+                "methodology issues:"
+            )
+            for name in suspects["pollster"]:
+                print(f"   - {name}")
+        else:
+            print("✓ No pollsters flagged for methodology concerns.")
+
+    # Plot residuals for suspect pollsters
+    if plot_suspects and suspect_data:
+        column = inputs.get("column", "Unknown")
+        for data in suspect_data:
+            _plot_residuals(
+                firm_name=data["firm_name"],
+                firm_days=data["firm_days"],
+                firm_residuals=data["firm_residuals"],
+                sigma_mean=sigma_mean,
+                day_zero=inputs["day_zero"],
+                column=column,
+                issues=data["issues"],
+                show=show,
+                **kwargs,
+            )
+
+    return results_df
