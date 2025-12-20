@@ -125,6 +125,10 @@ def _plot_bar_chart(
     ax.set_yticklabels(sorted_vars, fontsize=9)
     ax.invert_yaxis()
 
+    # Add horizontal dashed line at median position (zorder between bars and text)
+    median_position = (n_vars - 1) / 2
+    ax.axhline(median_position, color="darkgrey", linestyle="--", linewidth=1.5, zorder=10, label="Median House")
+
     kwargs.setdefault("axvline", {"x": 0, "color": "black", "linestyle": "-", "linewidth": 0.5, "zorder": 99})
     kwargs.setdefault("title", "Posterior Distributions")
     kwargs.setdefault("xlabel", "Value")

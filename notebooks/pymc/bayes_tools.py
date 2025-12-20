@@ -302,16 +302,16 @@ def core_likelihood(
     # check for specified parameters
     likelihood = kwargs.get("likelihood", "Normal")
     nu = kwargs.get("nu", None)
-    sigma_likelihood = kwargs.get("sigma_likelihood", None)
+    sigma_obs = kwargs.get("sigma_obs", None)
     grw = kwargs.get("grw", True)
 
     # construct likelihood
     with model:
-        if sigma_likelihood is None:
-            sigma_likelihood_hint = {"sigma": 5}
-            print(f"sigma_likelihood HalfNormal prior: {sigma_likelihood_hint}")
-            sigma_likelihood = pm.HalfNormal(
-                "sigma_likelihood", **sigma_likelihood_hint
+        if sigma_obs is None:
+            sigma_obs_hint = {"sigma": 5}
+            print(f"sigma_obs HalfNormal prior: {sigma_obs_hint}")
+            sigma_obs = pm.HalfNormal(
+                "sigma_obs", **sigma_obs_hint
             )
         mu = (
             voting_intention[inputs["poll_day"]]
@@ -322,7 +322,7 @@ def core_likelihood(
         common_args = {
             "name": "observed_polls",
             "mu": mu,
-            "sigma": sigma_likelihood,
+            "sigma": sigma_obs,
             "observed": inputs["zero_centered_y"],
         }
 
@@ -617,7 +617,7 @@ def _plot_residuals(
         firm_name: Name of the pollster
         firm_days: Array of day numbers for this pollster's polls
         firm_residuals: Array of residuals for this pollster
-        sigma_mean: Model's sigma_likelihood (observation noise)
+        sigma_mean: Model's sigma_obs (observation noise)
         day_zero: The reference date (day 0)
         column: The column being analysed (for title)
         issues: List of issues detected for this pollster
@@ -698,7 +698,7 @@ def check_residuals(
 
     For each pollster with at least MIN_POLLS_FOR_RESIDUAL_CHECK polls:
     - Calculates residuals: observed - (voting_intention + house_effect)
-    - Checks if residuals are within ±Nσ (N=SIGMA_MULTIPLIER, using model's sigma_likelihood)
+    - Checks if residuals are within ±Nσ (N=SIGMA_MULTIPLIER, using model's sigma_obs)
     - Tests for heteroskedasticity (variance changing over time)
     - Uses t-test to check for significant mean shift between first/second half
     - Flags recent polls that are outliers
@@ -732,7 +732,7 @@ def check_residuals(
     he_posterior = trace.posterior["house_effects"]
     he_mean = he_posterior.mean(dim=["chain", "draw"]).values
 
-    sigma_posterior = trace.posterior["sigma_likelihood"]
+    sigma_posterior = trace.posterior["sigma_obs"]
     sigma_mean = float(sigma_posterior.mean(dim=["chain", "draw"]).values)
 
     # Determine if this is a GRW model (voting_intention indexed by day)
@@ -850,7 +850,7 @@ def check_residuals(
 
     if verbose and len(results_df) > 0:
         print("\n=== Residual Diagnostics by Pollster ===")
-        print(f"Model sigma_likelihood: {sigma_mean:.2f}")
+        print(f"Model sigma_obs: {sigma_mean:.2f}")
         print(f"Minimum polls required: {MIN_POLLS_FOR_RESIDUAL_CHECK}\n")
 
         for _, row in results_df.iterrows():
