@@ -52,12 +52,13 @@ def _check_he_constraints(box: dict[str, Any]) -> None:
         "The house-effect-constrained pollsters should be first in the 'firm-list'.",
     )
 
-    # -- check the exclusions are last
-    he_sum_exclusions2 = firms[-len(he_sum_exclusions) :]
-    ensure(
-        set(he_sum_exclusions) == set(he_sum_exclusions2),
-        "The unconstrained pollsters should be last in the 'firm-list'.",
-    )
+    # -- check the exclusions are last (skip if no exclusions)
+    if len(he_sum_exclusions) > 0:
+        he_sum_exclusions2 = firms[-len(he_sum_exclusions) :]
+        ensure(
+            set(he_sum_exclusions) == set(he_sum_exclusions2),
+            "The unconstrained pollsters should be last in the 'firm-list'.",
+        )
 
 
 def prepare_data_for_analysis(
@@ -210,15 +211,58 @@ def temporal_model(
     return voting_intention
 
 
-def house_effects_model(inputs: dict[str, Any], model: pm.Model) -> pt.TensorVariable:
+def _zero_median_transform(values: pt.TensorVariable) -> pt.TensorVariable:
+    """Transform values so their median is zero.
+
+    For odd n: median is the middle element after sorting.
+    For even n: median is average of two middle elements.
+    """
+    n = values.shape[0]
+    sorted_values = pt.sort(values)
+    mid = n // 2
+    median = pt.switch(
+        pt.eq(n % 2, 0),
+        (sorted_values[mid - 1] + sorted_values[mid]) / 2,
+        sorted_values[mid],
+    )
+    return values - median
+
+
+def house_effects_model(
+    inputs: dict[str, Any], model: pm.Model, constraint: str = "zero_median"
+) -> pt.TensorVariable:
     """The house effects model. This model component is used with
-    both the GRW and the Gaussian Process (GP) models."""
+    both the GRW and the Gaussian Process (GP) models.
+
+    Args:
+        inputs: Dictionary of model inputs from prepare_data_for_analysis()
+        model: PyMC model context
+        constraint: Type of constraint for house effects:
+            - "zero_median": Median of ALL house effects is zero (default)
+            - "zero_sum": Sum/mean of included house effects is zero
+            - "none": No constraint (used with anchored models)
+    """
 
     house_effect_sigma = inputs.get("house_effect_sigma", 5.0)
     with model:
-        if inputs["right_anchor"] is None and inputs["left_anchor"] is None:
+        if inputs["right_anchor"] is not None or inputs["left_anchor"] is not None:
+            # all house effects are unconstrained, used in anchored models
+            house_effects = pm.Normal(
+                "house_effects", sigma=house_effect_sigma, shape=inputs["n_firms"]
+            )
+        elif constraint == "zero_median":
+            # Median of ALL house effects is zero
+            raw_he = pm.Normal(
+                "raw_he",
+                sigma=house_effect_sigma,
+                shape=inputs["n_firms"],
+            )
+            house_effects = pm.Deterministic(
+                "house_effects", _zero_median_transform(raw_he)
+            )
+        elif constraint == "zero_sum":
+            # Original approach: sum-to-zero for included, unconstrained for excluded
             if len(inputs["he_sum_exclusions"]) > 0:
-                # sum to zero constraint for some (but not all) houses
                 zero_sum_he = pm.ZeroSumNormal(
                     "zero_sum_he",
                     sigma=house_effect_sigma,
@@ -234,12 +278,11 @@ def house_effects_model(inputs: dict[str, Any], model: pm.Model) -> pt.TensorVar
                     var=pm.math.concatenate([zero_sum_he, unconstrained_he]),
                 )
             else:
-                # sum to zero constraint for all houses
                 house_effects = pm.ZeroSumNormal(
                     "house_effects", sigma=house_effect_sigma, shape=inputs["n_firms"]
                 )
         else:
-            # all house effects are unconstrained, used in anchored models
+            # No constraint
             house_effects = pm.Normal(
                 "house_effects", sigma=house_effect_sigma, shape=inputs["n_firms"]
             )
@@ -303,12 +346,20 @@ def grw_model(inputs: dict[str, Any], **kwargs) -> pm.Model:
     """PyMC model for pooling/aggregating voter opinion polls,
     using a Gaussian random walk (GRW). Model assumes poll data
     (in percentage points) has been zero-centered (by
-    subtracting the mean for the series). Model assumes house
-    effects sum to zero."""
+    subtracting the mean for the series).
 
+    Args:
+        inputs: Dictionary of model inputs from prepare_data_for_analysis()
+        **kwargs: Additional arguments including:
+            - constraint: House effect constraint type ("zero_median", "zero_sum", "none")
+            - innovation: GRW innovation parameter
+            - likelihood: Likelihood type ("Normal" or "StudentT")
+    """
+
+    constraint = kwargs.pop("constraint", "zero_median")
     model = pm.Model()
     voting_intention = temporal_model(inputs, model, **kwargs)
-    house_effects = house_effects_model(inputs, model)
+    house_effects = house_effects_model(inputs, model, constraint=constraint)
     core_likelihood(inputs, model, voting_intention, house_effects, **kwargs)
     return model
 
@@ -376,13 +427,20 @@ def gp_prior(
 
 def gp_model(inputs: dict[str, Any], **kwargs) -> pm.Model:
     """PyMC model for pooling/aggregating voter opinion polls,
-    using a Gaussian Process (GP). Note: **kwargs allows one to
-    pass length_scale and eta to gp_prior() and/or pass approach,
-    nu and sigma to gp_likelihood()."""
+    using a Gaussian Process (GP).
 
+    Args:
+        inputs: Dictionary of model inputs from prepare_data_for_analysis()
+        **kwargs: Additional arguments including:
+            - constraint: House effect constraint type ("zero_median", "zero_sum", "none")
+            - length_scale, eta: GP prior parameters
+            - likelihood: Likelihood type ("Normal" or "StudentT")
+    """
+
+    constraint = kwargs.pop("constraint", "zero_median")
     model = pm.Model()
     voting_intention = gp_prior(inputs, model, **kwargs)
-    house_effects = house_effects_model(inputs, model)
+    house_effects = house_effects_model(inputs, model, constraint=constraint)
     core_likelihood(inputs, model, voting_intention, house_effects, **kwargs)
     return model
 
@@ -577,7 +635,9 @@ def _plot_residuals(
 
     # Shade ±Nσ region
     sigma_band = SIGMA_MULTIPLIER * sigma_mean
-    ax.axhspan(-sigma_band, sigma_band, alpha=0.2, color="green", label=f"±{SIGMA_MULTIPLIER}σ")
+    ax.axhspan(
+        -sigma_band, sigma_band, alpha=0.2, color="green", label=f"±{SIGMA_MULTIPLIER}σ"
+    )
 
     # Plot zero line
     ax.axhline(0, color="black", linestyle="-", linewidth=0.5)
@@ -806,7 +866,9 @@ def check_residuals(
                 print(f" (variance {direction})")
             else:
                 print(" (homoskedastic)")
-            print(f"  Recent outliers: {row['recent_3s']}@3σ, {row['recent_2s']}@2σ (of {RECENT_POLL_COUNT})")
+            print(
+                f"  Recent outliers: {row['recent_3s']}@3σ, {row['recent_2s']}@2σ (of {RECENT_POLL_COUNT})"
+            )
             print(
                 f"  Mean shift: {row['mean_shift']:+.2f} "
                 f"(t-test p={row['mean_shift_pvalue']:.3f})"
