@@ -2,12 +2,62 @@
 
 import smtplib
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional
 
 from decouple import config  # type: ignore[import-untyped]
+
+
+@dataclass
+class EmailConfig:
+    """Email configuration loaded from environment."""
+
+    sender_email: str
+    sender_password: str
+    recipient_email: str
+    smtp_server: str
+    smtp_port: int
+
+    @classmethod
+    def from_env(cls) -> Optional["EmailConfig"]:
+        """Load email config from environment. Returns None if not configured."""
+        sender = config("SENDER_EMAIL", default="", cast=str)
+        password = config("SENDER_PASSWORD", default="", cast=str)
+        recipient = config("RECIPIENT_EMAIL", default="", cast=str)
+
+        if not (sender and password and recipient):
+            return None
+
+        return cls(
+            sender_email=sender,
+            sender_password=password,
+            recipient_email=recipient,
+            smtp_server=config("SMTP_SERVER", default="smtp.gmail.com", cast=str),
+            smtp_port=config("SMTP_PORT", cast=int, default=587),
+        )
+
+
+def _send_email(cfg: EmailConfig, subject: str, body: str) -> bool:
+    """Send an email using the provided configuration."""
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = cfg.sender_email
+        msg["To"] = cfg.recipient_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP(cfg.smtp_server, cfg.smtp_port) as server:
+            server.starttls()
+            server.login(cfg.sender_email, cfg.sender_password)
+            server.send_message(msg)
+
+        return True
+    except Exception as e:
+        logging.error(f"Failed to send email: {e}")
+        return False
 
 
 def send_error_notification(
@@ -26,28 +76,13 @@ def send_error_notification(
     Returns:
         bool: True if email sent successfully, False otherwise
     """
-    sender_email = config("SENDER_EMAIL", default="", cast=str)
-    sender_password = config("SENDER_PASSWORD", default="", cast=str)
-    recipient_email = config("RECIPIENT_EMAIL", default="", cast=str)
-
-    if not (sender_email and sender_password and recipient_email):
+    cfg = EmailConfig.from_env()
+    if cfg is None:
         logging.warning("Email not configured - cannot send notification")
         return False
 
-    smtp_server = config("SMTP_SERVER", default="smtp.gmail.com", cast=str)
-    smtp_port = config("SMTP_PORT", cast=int, default=587)
-
-    try:
-        # Create message
-        msg = MIMEMultipart()
-        msg["From"] = str(sender_email)
-        msg["To"] = str(recipient_email)
-        msg["Subject"] = (
-            f"🚨 {scraper_name} Failed - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        )
-
-        # Email body
-        body = f"""
+    subject = f"🚨 {scraper_name} Failed - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    body = f"""
 {scraper_name} failed at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 Error: {error_message}
@@ -58,22 +93,12 @@ Please check the scraper and website for changes.
 
 ---
 Automated notification from Australian Federal Election 2028 scraper
-        """.strip()
+    """.strip()
 
-        msg.attach(MIMEText(body, "plain"))
-
-        # Send email
-        with smtplib.SMTP(str(smtp_server), smtp_port) as server:
-            server.starttls()
-            server.login(str(sender_email), str(sender_password))
-            server.send_message(msg)
-
+    if _send_email(cfg, subject, body):
         logging.info("Error notification email sent successfully")
         return True
-
-    except Exception as e:
-        logging.error(f"Failed to send email notification: {e}")
-        return False
+    return False
 
 
 def send_success_notification(
@@ -89,27 +114,12 @@ def send_success_notification(
     Returns:
         bool: True if email sent successfully, False otherwise
     """
-    sender_email = config("SENDER_EMAIL", default="", cast=str)
-    sender_password = config("SENDER_PASSWORD", default="", cast=str)
-    recipient_email = config("RECIPIENT_EMAIL", default="", cast=str)
-
-    if not (sender_email and sender_password and recipient_email):
+    cfg = EmailConfig.from_env()
+    if cfg is None:
         return False
 
-    smtp_server = config("SMTP_SERVER", default="smtp.gmail.com", cast=str)
-    smtp_port = config("SMTP_PORT", cast=int, default=587)
-
-    try:
-        # Create message
-        msg = MIMEMultipart()
-        msg["From"] = str(sender_email)
-        msg["To"] = str(recipient_email)
-        msg["Subject"] = (
-            f"✅ {scraper_name} Success - {datetime.now().strftime('%Y-%m-%d')}"
-        )
-
-        # Email body
-        body = f"""
+    subject = f"✅ {scraper_name} Success - {datetime.now().strftime('%Y-%m-%d')}"
+    body = f"""
 {scraper_name} completed successfully at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 Data captured:
@@ -117,19 +127,9 @@ Data captured:
 
 ---
 Automated notification from Australian Federal Election 2028 scraper
-        """.strip()
+    """.strip()
 
-        msg.attach(MIMEText(body, "plain"))
-
-        # Send email
-        with smtplib.SMTP(str(smtp_server), smtp_port) as server:
-            server.starttls()
-            server.login(str(sender_email), str(sender_password))
-            server.send_message(msg)
-
+    if _send_email(cfg, subject, body):
         logging.info("Success notification email sent")
         return True
-
-    except Exception as e:
-        logging.error(f"Failed to send success email: {e}")
-        return False
+    return False

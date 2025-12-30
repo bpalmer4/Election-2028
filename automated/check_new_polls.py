@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 from scrape_wikipedia_polls import WikipediaPollingScaper
 from notifications import send_success_notification, send_error_notification
+from utils import load_latest_csv
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,18 +69,8 @@ def get_previous_poll_data():
     """Get poll dataframes from most recent saved files."""
     poll_dir = Path(__file__).parent.parent / "poll-data"
 
-    # Find most recent files
-    vi_files = sorted(poll_dir.glob("voting_intention_*.csv"))
-    pm_files = sorted(poll_dir.glob("preferred_pm_*.csv"))
-
-    old_vi_df = pd.DataFrame()
-    old_pm_df = pd.DataFrame()
-
-    if vi_files:
-        old_vi_df = pd.read_csv(vi_files[-1])
-
-    if pm_files:
-        old_pm_df = pd.read_csv(pm_files[-1])
+    old_vi_df = load_latest_csv(poll_dir, "voting_intention_*.csv")
+    old_pm_df = load_latest_csv(poll_dir, "preferred_pm_*.csv")
 
     return old_vi_df, old_pm_df
 

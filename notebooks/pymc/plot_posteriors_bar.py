@@ -7,22 +7,7 @@ import matplotlib.pyplot as plt
 import mgplot as mg
 import pandas as pd
 
-
-def get_scalar_var(var_name: str, trace: az.InferenceData) -> pd.Series:
-    """Extract chains/draws for a scalar variable as a Series."""
-    data = trace.posterior[var_name].stack(sample=("chain", "draw"))
-    return pd.Series(data.values.flatten())
-
-
-def get_scalar_var_names(trace: az.InferenceData) -> list[str]:
-    """Get names of scalar (non-vector) variables from trace."""
-    scalar_vars = []
-    for var_name in trace.posterior.data_vars:
-        var = trace.posterior[var_name]
-        # Scalar if only dimensions are chain and draw
-        if set(var.dims) == {"chain", "draw"}:
-            scalar_vars.append(var_name)
-    return scalar_vars
+from extraction import get_scalar_var, get_scalar_var_names
 
 
 def _auto_scale(samples: pd.Series, median: float) -> tuple[pd.Series, int]:

@@ -19,20 +19,13 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 
+from utils import ensure
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-
-# --- UTILITY FUNCTIONS ---
-
-
-def ensure(condition: bool, message: str = "Assertion failed") -> None:
-    """Simple assertion function that raises an exception if condition is False."""
-    if not condition:
-        raise AssertionError(message)
 
 
 # --- URL HANDLING FUNCTIONS ---

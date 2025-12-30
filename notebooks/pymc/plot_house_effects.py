@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import mgplot as mg
 import pandas as pd
 
-from extraction import get_vector_var
+from extraction import get_house_effects_var
 
 
 def plot_house_effects_bar(
@@ -27,24 +27,7 @@ def plot_house_effects_bar(
     Returns:
         Series of median house effects by pollster name
     """
-    # Extract house effects - handle both combined and split variable cases
-    posterior_vars = list(trace.posterior.data_vars)
-
-    if "house_effects" in posterior_vars:
-        df = get_vector_var("house_effects", trace)
-    elif "zero_sum_he" in posterior_vars:
-        # Combine zero_sum_he and unconstrained_he
-        df_zero = get_vector_var("zero_sum_he", trace)
-        if "unconstrained_he" in posterior_vars:
-            df_unconst = get_vector_var("unconstrained_he", trace)
-            # Concatenate: inclusions first (zero_sum), then exclusions (unconstrained)
-            df = pd.concat([df_zero, df_unconst], ignore_index=True)
-        else:
-            df = df_zero
-    else:
-        raise ValueError("No house effects variables found in trace")
-
-    df = df.rename(index=firm_map)
+    df = get_house_effects_var(trace).rename(index=firm_map)
 
     medians = df.quantile(0.5, axis=1).sort_values()
     df = df.reindex(medians.index)
@@ -127,9 +110,19 @@ def _plot_bar_chart(
 
     # Add horizontal dashed line at median position (zorder between bars and text)
     median_position = (n_vars - 1) / 2
-    ax.axhline(median_position, color="darkgrey", linestyle="--", linewidth=1.5, zorder=10, label="Median House")
+    ax.axhline(
+        median_position,
+        color="darkgrey",
+        linestyle="--",
+        linewidth=1.5,
+        zorder=10,
+        label="Median House",
+    )
 
-    kwargs.setdefault("axvline", {"x": 0, "color": "black", "linestyle": "-", "linewidth": 0.5, "zorder": 99})
+    kwargs.setdefault(
+        "axvline",
+        {"x": 0, "color": "black", "linestyle": "-", "linewidth": 0.5, "zorder": 99},
+    )
     kwargs.setdefault("title", "Posterior Distributions")
     kwargs.setdefault("xlabel", "Value")
     kwargs.setdefault("legend", {"loc": "upper right", "fontsize": "x-small"})
