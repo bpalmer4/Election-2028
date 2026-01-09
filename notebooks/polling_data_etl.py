@@ -47,4 +47,21 @@ def load_polling_data(data_type: str = "voting_intention") -> pd.DataFrame:
 
     df = df.dropna(axis=1, how="all")  # drop all NAN columns
 
+    # Filter out alternative 2PP rows for voting intention data
+    # Keep only classic ALP vs L/NP rows, exclude ALP vs ONP rows
+    if data_type == "voting_intention":
+        tpp_lnp_col = next(
+            (c for c in df.columns if "2pp" in c.lower() and "l/np" in c.lower()),
+            None,
+        )
+        tpp_onp_col = next(
+            (c for c in df.columns if "2pp" in c.lower() and "onp" in c.lower()),
+            None,
+        )
+        if tpp_lnp_col and tpp_onp_col:
+            alt_tpp_rows = df[tpp_lnp_col].isna() & df[tpp_onp_col].notna()
+            if alt_tpp_rows.any():
+                print(f"Filtering out {alt_tpp_rows.sum()} alternative 2PP rows (ALP vs ONP)")
+                df = df[~alt_tpp_rows].copy()
+
     return df
