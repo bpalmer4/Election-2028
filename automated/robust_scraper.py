@@ -51,7 +51,7 @@ class RobustScraper:
         # Base URL containing links to all political betting markets
         self.base_url = config(
             "SCRAPER_BASE_URL",
-            default="https://www.sportsbet.com.au/betting/politics/australian-federal-politics/",
+            default="https://www.sportsbet.com.au/betting/politics/australian-federal-politics./",
             cast=str,
         )
 
