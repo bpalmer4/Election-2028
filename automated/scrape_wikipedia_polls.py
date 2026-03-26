@@ -13,6 +13,7 @@ from pathlib import Path
 from collections.abc import Callable
 from dataclasses import dataclass
 from io import StringIO
+import numpy as np
 import pandas as pd
 import requests
 from requests.adapters import HTTPAdapter
@@ -90,7 +91,22 @@ class URLHandler:
     ) -> list[pd.DataFrame]:
         """Return a list of tables found at a URL. Tables are returned in pandas DataFrame format."""
         html = self.get_url(url)
-        df_list = pd.read_html(StringIO(html), header=header)
+        # Filter to wikitable-class tables only to avoid parsing
+        # navigation/notice tables that may have fewer header rows
+        soup = BeautifulSoup(html, "html.parser")
+        wikitables = soup.find_all("table", class_="wikitable")
+        df_list = []
+        self._table_years: dict[int, str] = {}
+        for table in wikitables:
+            idx = len(df_list)
+            df_list.extend(pd.read_html(StringIO(str(table)), header=header))
+            # Extract year from preceding heading (e.g. "2026", "2025")
+            prev_heading = table.find_previous(["h2", "h3", "h4"])
+            if prev_heading:
+                heading_text = prev_heading.get_text().strip()
+                year_match = re.match(r"^(\d{4})$", heading_text)
+                if year_match:
+                    self._table_years[idx] = year_match.group(1)
         ensure(
             len(df_list) > 0, "No tables found at URL"
         )  # check we have at least one table
@@ -330,6 +346,98 @@ class WikipediaPollingScaper:
         return flat
 
     @staticmethod
+    def merge_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """Merge columns that are pandas auto-deduplicated copies (e.g. 'X.1', 'X.2').
+
+        This handles the case where Wikipedia splits a column into sub-columns
+        (e.g. L/NP split into LIB, LNP, NAT). When parsed with pd.read_html,
+        colspan causes identical values across sub-columns, while split values
+        differ. This method sums the differing values and keeps the single value
+        when they're identical, then drops the duplicate columns.
+        """
+        # Find columns with .N suffixes that have a base column
+        suffix_pattern = re.compile(r"^(.+)\.\d+$")
+        base_to_dupes: dict[str, list[str]] = {}
+        for col in df.columns:
+            m = suffix_pattern.match(col)
+            if m:
+                base = m.group(1)
+                if base in df.columns:
+                    base_to_dupes.setdefault(base, []).append(col)
+
+        df = df.copy()
+
+        if not base_to_dupes:
+            return WikipediaPollingScaper._fix_colspan_ind_oth(df)
+
+        cols_to_drop: list[str] = []
+        for base, dupes in base_to_dupes.items():
+            all_cols = [base] + dupes
+            logger.info(
+                "Merging duplicate columns: %s -> %s", all_cols, base
+            )
+            # Strip % signs and convert to numeric for comparison
+            numeric_df = pd.DataFrame({
+                c: pd.to_numeric(
+                    df[c].astype(str).str.replace("%", "", regex=False).str.strip(),
+                    errors="coerce",
+                )
+                for c in all_cols
+            })
+
+            # Colspan makes multiple sub-columns share the same value.
+            # For each row, deduplicate identical values then sum the distinct ones.
+            # e.g. LIB=21.5, LNP=21.5, NAT=4 -> unique values 21.5+4 = 25.5
+            def _row_merge(row: pd.Series) -> float:
+                non_nan = row.dropna().unique()
+                return float(non_nan.sum()) if len(non_nan) > 0 else np.nan
+
+            df[base] = numeric_df.apply(_row_merge, axis=1)
+            cols_to_drop.extend(dupes)
+
+        df = df.drop(columns=cols_to_drop)
+        logger.info("Dropped duplicate columns: %s", cols_to_drop)
+        return WikipediaPollingScaper._fix_colspan_ind_oth(df)
+
+    @staticmethod
+    def _fix_colspan_ind_oth(df: pd.DataFrame) -> pd.DataFrame:
+        """Fix data-row colspans between IND/OTH columns.
+
+        When a data cell has colspan=2, pd.read_html fills both columns
+        with the same value. Detect this by checking if IND == OTH
+        AND the primary sum exceeds 102%.
+        """
+        vote_cols = [c for c in df.columns if "primary vote" in c.lower()]
+        ind_col = next((c for c in vote_cols if "ind" in c.lower()), None)
+        oth_col = next((c for c in vote_cols if "oth" in c.lower()), None)
+        if not (ind_col and oth_col):
+            return df
+
+        def _clean_numeric(series: pd.Series) -> pd.Series:
+            """Strip %, footnotes, and whitespace then convert to numeric."""
+            return pd.to_numeric(
+                series.astype(str)
+                .str.replace(r"\[.*?\]", "", regex=True)
+                .str.replace("%", "", regex=False)
+                .str.strip(),
+                errors="coerce",
+            )
+
+        ind_num = _clean_numeric(df[ind_col])
+        oth_num = _clean_numeric(df[oth_col])
+        vote_numeric = pd.DataFrame({c: _clean_numeric(df[c]) for c in vote_cols})
+        row_sum = vote_numeric.sum(axis=1, skipna=True)
+        colspan_mask = (ind_num == oth_num) & ind_num.notna() & (row_sum > 102)
+        if colspan_mask.any():
+            logger.info(
+                "Clearing %d OTH values duplicated from IND by colspan",
+                colspan_mask.sum(),
+            )
+            df.loc[colspan_mask, oth_col] = np.nan
+
+        return df
+
+    @staticmethod
     def fix_satisfaction_columns(df: pd.DataFrame) -> pd.DataFrame:
         """Fix satisfaction table columns that have 'Unnamed' in level 1.
 
@@ -387,6 +495,7 @@ class WikipediaPollingScaper:
         df_list: list[pd.DataFrame],
         table_list: list[int] | None = None,
         verbose: bool = False,
+        table_years: dict[int, str] | None = None,
     ) -> pd.DataFrame | None:
         """Get selected tables (by int in table_list) from Wikipedia page.
         Return a single merged table for the selected tables."""
@@ -411,6 +520,20 @@ class WikipediaPollingScaper:
                 logger.debug("Table %d preview:\n%s", table_num, table.head())
             flat = WikipediaPollingScaper.flatten_col_names(table.columns)
             table.columns = pd.Index(flat)
+            table = WikipediaPollingScaper.merge_duplicate_columns(table)
+
+            # Append year to Date column if dates lack year info
+            if table_years and table_num in table_years and "Date" in table.columns:
+                year = table_years[table_num]
+                # Only append year to date strings that don't already contain a 4-digit year
+                year_pattern = re.compile(r"\d{4}")
+                table["Date"] = table["Date"].apply(
+                    lambda d, y=year: (
+                        f"{d} {y}"
+                        if isinstance(d, str) and not year_pattern.search(d)
+                        else d
+                    )
+                )
             if combined is None:
                 combined = table
             else:
@@ -514,13 +637,16 @@ class WikipediaPollingScaper:
         """Get national polling tables using the simple approach with manual table selection."""
         try:
             df_list = self.url_handler.get_table_list(self.url)
+            table_years = getattr(self.url_handler, "_table_years", {})
             logger.info("Found %d tables on Wikipedia page", len(df_list))
             table_indices = (
                 self.get_polling_table_indices(df_list, must_have, any_of)
                 if table_indices is None
                 else table_indices
             )
-            return self.get_combined_table(df_list, table_indices, verbose=True)
+            return self.get_combined_table(
+                df_list, table_indices, verbose=True, table_years=table_years
+            )
 
         except Exception as e:  # pylint: disable=broad-except
             logger.error("Failed to get tables: %s", e)
@@ -653,6 +779,9 @@ class WikipediaPollingScaper:
                 pattern,
             )
             for col in columns:
+                # Convert to float64 to avoid int-to-float cast errors (pandas 3.0+)
+                if pd.api.types.is_integer_dtype(df[col]):
+                    df[col] = df[col].astype("Float64")
                 df.loc[to_normalize, col] = (
                     df.loc[to_normalize, col] / row_sums.loc[to_normalize] * 100
                 )
@@ -687,31 +816,39 @@ class WikipediaPollingScaper:
         if raw_df is None or raw_df.empty:
             return pd.DataFrame()
 
-        # Handle inconsistent column names - use "Firm" if "Brand" doesn't exist
-        if "Brand" not in raw_df.columns and "Firm" in raw_df.columns:
-            raw_df = raw_df.rename(columns={"Firm": "Brand"})
+        # Handle inconsistent column names
+        if "Brand" not in raw_df.columns:
+            for alt in ("Firm", "Polling Firm"):
+                if alt in raw_df.columns:
+                    raw_df = raw_df.rename(columns={alt: "Brand"})
+                    break
 
-        # Delete information rows - where Brand equals Interview mode or Brand is NaN
+        # Delete information/header rows
+        header_values = {"Polling Firm", "Firm", "Brand", "Date"}
+        mask = raw_df["Brand"].notna() & ~raw_df["Brand"].isin(header_values)
         if "Interview mode" in raw_df.columns:
-            df = raw_df[
-                (raw_df["Brand"] != raw_df["Interview mode"])
-                & (raw_df["Brand"].notna())
-            ].copy()
-        else:
-            df = raw_df[raw_df["Brand"].notna()].copy()
+            mask = mask & (raw_df["Brand"] != raw_df["Interview mode"])
+        df = raw_df[mask].copy()
 
-        # Strip square bracket footnotes from every object column
+        def _is_text_column(series: pd.Series) -> bool:
+            """Check if a column contains text (string/object dtype in pandas 3.0+)."""
+            return pd.api.types.is_string_dtype(series) or series.dtype == "object"
+
+        # Strip square bracket footnotes from every string/object column
         for col in df.columns:
-            if df[col].dtype == "object":
-                df[col] = (
-                    df[col].str.replace(r"\[[a-z0-9]+\]", "", regex=True).str.strip()
-                )
+            if _is_text_column(df[col]):
+                # Convert to string Series for .str accessor (preserves NaN)
+                as_str = df[col].astype("string")
+                df[col] = as_str.str.replace(r"\[[a-z0-9]+\]", "", regex=True).str.strip()
 
         # Remove percents and convert to numeric for specified columns
         for col in df.columns:
-            if numeric_col_filter(col) and df[col].dtype == "object":
-                df[col] = df[col].str.replace("%", "", regex=True).str.strip()
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+            if numeric_col_filter(col) and _is_text_column(df[col]):
+                as_str = df[col].astype("string")
+                df[col] = pd.to_numeric(
+                    as_str.str.replace("%", "", regex=False).str.strip(),
+                    errors="coerce",
+                )
 
         # Parse dates
         df["parsed_date"] = DateParser.parse_series(df["Date"])
@@ -733,13 +870,19 @@ class WikipediaPollingScaper:
             if not cols:
                 return pd.Series(False, index=df.index)
 
-            # Make a copy and fill IND column with 0 if it exists
+            # Identify optional columns (not reported by all pollsters)
             df_check = df[cols].copy()
-            ind_cols = [c for c in cols if "ind" in c.lower()]
-            if ind_cols:
-                df_check[ind_cols] = df_check[ind_cols].fillna(0)
+            opt = [
+                c for c in cols
+                if "ind" in c.lower() or "oth" in c.lower() or "onp" in c.lower()
+            ]
 
-            has_any_data = df_check.notna().any(axis=1)
+            # Check for any data BEFORE filling optional cols with 0
+            has_any_data = df[cols].notna().any(axis=1)
+
+            # Fill optional columns with 0 for sum/completeness checks
+            if opt:
+                df_check[opt] = df_check[opt].fillna(0)
             all_present = df_check.notna().all(axis=1)
             total = df_check.sum(axis=1)
             outside_range = (total < lower) | (total > upper)
@@ -753,10 +896,18 @@ class WikipediaPollingScaper:
             incomplete = has_any_data & ~all_present
             return incomplete | complete_bad_sum
 
-        df["problematic"] = (
-            check_and_nan_bad_sums("primary", self.PRIMARY_VOTE_LOWER, self.PRIMARY_VOTE_UPPER)
-            | check_and_nan_bad_sums("2pp", self.TPP_VOTE_LOWER, self.TPP_VOTE_UPPER)
+        primary_problem = check_and_nan_bad_sums("primary", self.PRIMARY_VOTE_LOWER, self.PRIMARY_VOTE_UPPER)
+        tpp_problem = check_and_nan_bad_sums("2pp", self.TPP_VOTE_LOWER, self.TPP_VOTE_UPPER)
+
+        # Only flag problems on rows that have the relevant data.
+        # Alternative 2PP rows (ALP vs ONP) have primary cleared and no L/NP 2PP.
+        primary_cols = [c for c in df.columns if "primary" in c.lower()]
+        has_primary = df[primary_cols].notna().any(axis=1) if primary_cols else pd.Series(False, index=df.index)
+        has_classic_2pp = (
+            df.get("2PP vote ALP", pd.Series(dtype="float64")).notna()
+            & df.get("2PP vote L/NP", pd.Series(dtype="float64")).notna()
         )
+        df["problematic"] = (primary_problem & has_primary) | (tpp_problem & has_classic_2pp)
         return df
 
     def scrape_voting_intention_polls(
@@ -777,6 +928,28 @@ class WikipediaPollingScaper:
 
         if processed_df.empty:
             return pd.DataFrame()
+
+        # Handle duplicate rows from Wikipedia's split 2PP format.
+        # Primary votes are only valid on rows with classic ALP vs L/NP 2PP
+        # (avoids double-counting from duplicate rows for alternative 2PP matchups).
+        # All 2PP columns are kept regardless.
+        alp_col = "2PP vote ALP"
+        lnp_col = "2PP vote L/NP"
+        primary_cols = [c for c in processed_df.columns if "primary" in c.lower()]
+        if alp_col in processed_df.columns and lnp_col in processed_df.columns and primary_cols:
+            tpp_cols = [c for c in processed_df.columns if "2pp" in c.lower()]
+            has_any_2pp = processed_df[tpp_cols].notna().any(axis=1)
+            has_classic_2pp = processed_df[alp_col].notna() & processed_df[lnp_col].notna()
+            # Only clear primary on rows that have SOME 2PP but not the classic pair
+            # (these are alternative 2PP rows like ALP vs ONP)
+            no_classic_2pp = has_any_2pp & ~has_classic_2pp
+            n_cleared = no_classic_2pp.sum()
+            if n_cleared:
+                processed_df.loc[no_classic_2pp, primary_cols] = np.nan
+                logger.info(
+                    "Cleared primary vote data from %d rows without classic ALP vs L/NP 2PP",
+                    n_cleared,
+                )
 
         # Check for completeness
         processed_df = self.check_completeness(

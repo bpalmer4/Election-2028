@@ -19,6 +19,7 @@ COLOR_FRACS = (0.3, 0.5, 0.7)
 FIXED_ALPHA = 0.4
 
 
+
 def _rgba_to_hex(rgba: tuple) -> str:
     """Convert RGBA tuple to hex string for compatibility with mgplot."""
     return "#{:02x}{:02x}{:02x}".format(
