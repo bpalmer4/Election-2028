@@ -42,6 +42,10 @@ OUTPUT_CSV = "../betting-data/sportsbet-2026-farrer-by-election.csv"
 SCRAPER_NAME = "Farrer By-Election Scraper"
 
 
+class MarketUnavailableError(Exception):
+    """Raised when the betting market is not currently available on Sportsbet."""
+
+
 class FarrerScraper:
     """Scraper for Farrer by-election betting odds.
 
@@ -123,6 +127,14 @@ class FarrerScraper:
                 wait = WebDriverWait(self.driver, self.timeout)
                 wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
                 time.sleep(2)
+
+                # Check if we were redirected away from the market page
+                current_url = self.driver.current_url
+                if "farrer" not in current_url.lower():
+                    raise MarketUnavailableError(
+                        f"Market not currently available "
+                        f"(redirected to {current_url})"
+                    )
 
                 soup = BeautifulSoup(self.driver.page_source, "lxml")
                 logger.info("Farrer by-election page loaded successfully")
@@ -303,7 +315,10 @@ class FarrerScraper:
             if not self.setup_driver():
                 raise Exception("Failed to setup Chrome driver")
 
-            soup = self.load_page_with_retry()
+            try:
+                soup = self.load_page_with_retry()
+            except MarketUnavailableError as e:
+                raise Exception(str(e)) from e
             if not soup:
                 raise Exception("Failed to load market page content")
 
