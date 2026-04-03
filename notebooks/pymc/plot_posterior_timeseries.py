@@ -67,6 +67,7 @@ def plot_posterior_timeseries(
     start: pd.Period | None = None,
     cuts: Sequence[float] = (0.005, 0.025, 0.16),
     color_fracs: Sequence[float] = COLOR_FRACS,
+    ax: Axes | None = None,
     finalise: bool = True,
     **finalise_kwargs: Any,
 ) -> Axes | None:
@@ -90,6 +91,7 @@ def plot_posterior_timeseries(
         start: Start period for filtering
         cuts: Quantile cuts for credible intervals
         color_fracs: Color fractions from colormap for each credible interval
+        ax: Optional existing Axes to plot onto. If None, creates a new figure.
         finalise: If True, call finalise_plot and return None.
             If False, return Axes for composition.
         **finalise_kwargs: Passed to mg.finalise_plot (title, lfooter, rfooter, etc.)
@@ -118,8 +120,9 @@ def plot_posterior_timeseries(
     main_color = _rgba_to_hex(cmap(0.7))  # For points, reference line, etc.
     median_color = _rgba_to_hex(cmap(0.9))  # Darker shade for median line
 
-    # Create axes and plot raw polls first (so credible intervals overlay them)
-    _, ax = plt.subplots()
+    # Create axes if not provided; plot raw polls first (so CIs overlay them)
+    if ax is None:
+        _, ax = plt.subplots()
     if poll_data is not None and poll_column is not None:
         _plot_raw_polls(ax, poll_data, poll_column, pollster_column, main_color)
 

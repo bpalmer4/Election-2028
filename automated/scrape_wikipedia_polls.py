@@ -22,6 +22,10 @@ from bs4 import BeautifulSoup
 
 from utils import ensure
 
+# Leader names for attitudinal polling (add new leaders here)
+PM_LEADER = "Albanese"
+OPPOSITION_LEADERS = ["Ley", "Taylor"]
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -333,6 +337,7 @@ class WikipediaPollingScaper:
     ATTITUDINAL_VOTE_LOWER = 99
     ATTITUDINAL_VOTE_UPPER = 101
 
+
     @staticmethod
     def flatten_col_names(columns: pd.Index) -> list[str]:
         """Flatten the hierarchical column index."""
@@ -438,6 +443,262 @@ class WikipediaPollingScaper:
         return df
 
     @staticmethod
+    def fix_midtable_leader_change(df: pd.DataFrame) -> pd.DataFrame:
+        """Handle mid-table leadership changes where Wikipedia redefines column
+        names partway through a table.
+
+        Detects annotation rows (where most columns contain the same long text,
+        e.g. "Angus Taylor replaces Sussan Ley..."), followed by a sub-header
+        row that redefines column names for the pre-transition section. Splits
+        the table, renames columns in the pre-transition portion, drops the
+        annotation/sub-header rows, and recombines.
+
+        Works for any number of mid-table transitions in any table.
+        """
+        MIN_ANNOTATION_LEN = 30  # annotation text is long
+        MIN_REPEAT_COLS = 3  # most columns have the same text
+
+        # Find annotation rows
+        annotation_rows = []
+        for idx in range(len(df)):
+            row = df.iloc[idx]
+            str_vals = [str(v).strip() for v in row.values if pd.notna(v) and str(v).strip()]
+            if not str_vals:
+                continue
+            # Check if most non-empty values are the same long string
+            from collections import Counter
+            counts = Counter(str_vals)
+            most_common_val, most_common_count = counts.most_common(1)[0]
+            if most_common_count >= MIN_REPEAT_COLS and len(most_common_val) >= MIN_ANNOTATION_LEN:
+                annotation_rows.append(idx)
+
+        if not annotation_rows:
+            return df
+
+        rows_to_drop = set()
+        # Process each annotation row
+        for ann_idx in annotation_rows:
+            rows_to_drop.add(ann_idx)
+
+            # Look for sub-header row(s) immediately after the annotation
+            # These rows redefine column names for the section below
+            for sub_idx in range(ann_idx + 1, min(ann_idx + 3, len(df))):
+                sub_row = df.iloc[sub_idx]
+                # A sub-header row has column names (short strings) in some cells
+                # and NaN/empty in the metadata columns (Date, Firm, Sample size)
+                date_val = sub_row.iloc[0] if len(sub_row) > 0 else None
+                if pd.notna(date_val) and str(date_val).strip() not in ("", "Date"):
+                    # This looks like a data row, not a sub-header
+                    # Check if it could still be a sub-header (all values are short non-numeric)
+                    non_meta = sub_row.iloc[3:]  # skip Date, Firm, Sample size
+                    str_non_meta = [str(v).strip() for v in non_meta if pd.notna(v) and str(v).strip()]
+                    if not str_non_meta or any(v.replace("%", "").replace(".", "").replace("-", "").isdigit() for v in str_non_meta):
+                        break  # This is actual data
+                rows_to_drop.add(sub_idx)
+
+                # Build column rename mapping from this sub-header row
+                renames = {}
+                for col_idx, col_name in enumerate(df.columns):
+                    val = sub_row.iloc[col_idx]
+                    if pd.notna(val):
+                        val_str = str(val).strip()
+                        if val_str and val_str != col_name and len(val_str) < MIN_ANNOTATION_LEN:
+                            # This sub-header redefines this column
+                            # Build new column name: replace the leader name part
+                            # e.g. "Party leaders Taylor" -> "Party leaders Ley"
+                            parts = col_name.rsplit(" ", 1)
+                            if len(parts) == 2:
+                                new_col = f"{parts[0]} {val_str}"
+                            else:
+                                new_col = val_str
+                            renames[col_name] = new_col
+
+                if renames:
+                    # Apply renames to all rows AFTER the annotation.
+                    # If renaming to a column that already exists, merge
+                    # the data (fill NaNs) rather than creating duplicates.
+                    post_section = df.iloc[sub_idx + 1:].copy()
+                    for old_col, new_col in renames.items():
+                        if old_col not in post_section.columns:
+                            continue
+                        if new_col in post_section.columns and new_col != old_col:
+                            # Merge: fill NaNs in existing column with data from old
+                            post_section[new_col] = post_section[new_col].fillna(
+                                post_section[old_col]
+                            )
+                            post_section = post_section.drop(columns=[old_col])
+                        else:
+                            post_section = post_section.rename(columns={old_col: new_col})
+                    pre_section = df.iloc[:ann_idx]
+                    df = pd.concat([pre_section, post_section], ignore_index=True)
+                    # Adjust rows_to_drop since we've restructured
+                    rows_to_drop = set()  # already handled by the concat
+                    logger.info(
+                        "Fixed mid-table leader change: %s",
+                        {k: v for k, v in renames.items() if k != v},
+                    )
+                    break
+
+        # Drop any remaining annotation/sub-header rows
+        if rows_to_drop:
+            df = df.drop(index=list(rows_to_drop)).reset_index(drop=True)
+
+        return df
+
+    @staticmethod
+    def _split_at_annotations(df: pd.DataFrame) -> list[pd.DataFrame]:
+        """Split a dataframe at annotation rows (leadership change markers).
+
+        Returns a list of dataframe sections, with annotation rows and
+        any sub-header rows removed. If no annotations found, returns
+        the original dataframe in a single-element list.
+        """
+        MIN_ANNOTATION_LEN = 30
+        MIN_REPEAT_COLS = 3
+
+        # Find annotation rows
+        ann_rows = []
+        for idx in range(len(df)):
+            row = df.iloc[idx]
+            str_vals = [str(v).strip() for v in row.values if pd.notna(v) and str(v).strip()]
+            if not str_vals:
+                continue
+            from collections import Counter
+            counts = Counter(str_vals)
+            most_common_val, most_common_count = counts.most_common(1)[0]
+            if most_common_count >= MIN_REPEAT_COLS and len(most_common_val) >= MIN_ANNOTATION_LEN:
+                ann_rows.append(idx)
+
+        if not ann_rows:
+            return [df]
+
+        sections = []
+        prev_end = 0
+        for ann_idx in ann_rows:
+            # Pre-annotation section
+            if ann_idx > prev_end:
+                sections.append(df.iloc[prev_end:ann_idx].reset_index(drop=True))
+            # Skip only the annotation row itself; keep sub-header rows
+            # so downstream processors (e.g. fix_satisfaction_columns) can use them
+            prev_end = ann_idx + 1
+
+        # Remaining section after last annotation (includes sub-headers + data)
+        if prev_end < len(df):
+            sections.append(df.iloc[prev_end:].reset_index(drop=True))
+
+        return sections if sections else [df]
+
+    @staticmethod
+    def process_satisfaction_table(raw_df: pd.DataFrame) -> pd.DataFrame:
+        """Process a satisfaction table from its raw MultiIndex form into a
+        clean single-level DataFrame with proper column names.
+
+        Handles:
+        - Leader names in either MultiIndex level (level 0 or level 1)
+        - Sub-header rows with Pos./Neg./DK/Net
+        - Mid-table annotation rows (leadership changes) that redefine
+          which leader the columns refer to
+        - Duplicate/empty header rows
+
+        Returns a DataFrame with columns like "Albanese Satisfied", "Ley Net", etc.
+        """
+        SUB_MAP = {"pos.": "Satisfied", "neg.": "Dissatisfied", "dk": "Don't know", "net": "Net"}
+        MIN_ANNOTATION_LEN = 30
+        MIN_REPEAT_COLS = 3
+
+        if not isinstance(raw_df.columns, pd.MultiIndex):
+            return raw_df
+
+        # --- Extract leader names from the MultiIndex ---
+        # One level has leader names, the other has "Unnamed" placeholders
+        level_0 = raw_df.columns.get_level_values(0)
+        level_1 = raw_df.columns.get_level_values(1)
+
+        # For each data column (after Date/Firm/Sample size), find the leader name
+        meta_cols = 3  # Date, Firm, Sample size
+        n_data_cols = len(raw_df.columns) - meta_cols
+        leaders_from_index = []
+        for i in range(meta_cols, len(raw_df.columns)):
+            l0 = str(level_0[i])
+            l1 = str(level_1[i])
+            # Leader name is in whichever level doesn't contain "unnamed"
+            if "unnamed" in l0.lower():
+                leaders_from_index.append(l1)
+            else:
+                leaders_from_index.append(l0)
+
+        # --- Flatten to single-level columns (just positional names for now) ---
+        flat_cols = ["Date", "Firm", "Sample size"] + [f"_col_{i}" for i in range(n_data_cols)]
+        df = raw_df.copy()
+        df.columns = flat_cols
+        data_cols = flat_cols[meta_cols:]
+
+        # --- Process rows: find sub-headers, annotations, and data ---
+        # Walk through rows, building sections with their leader mappings
+        final_rows = []
+        current_leaders = list(leaders_from_index)  # can be overridden by mid-table rename
+
+        for row_idx in range(len(df)):
+            row = df.iloc[row_idx]
+            data_vals = [str(row[c]).strip() if pd.notna(row[c]) else "" for c in data_cols]
+
+            # Check for annotation row
+            non_empty = [v for v in data_vals if v]
+            if non_empty:
+                from collections import Counter
+                counts = Counter(non_empty)
+                top_val, top_count = counts.most_common(1)[0]
+                if top_count >= MIN_REPEAT_COLS and len(top_val) >= MIN_ANNOTATION_LEN:
+                    continue  # skip annotation row
+
+            # Check for sub-header row (Pos/Neg/DK/Net)
+            lower_vals = [v.lower().rstrip(".") for v in data_vals]
+            if any(v in ("pos", "neg", "dk", "net") for v in lower_vals if v):
+                continue  # skip — we use positional pattern instead
+
+            # Check for leader rename row (short non-numeric strings)
+            if non_empty and not any(
+                v.replace("%", "").replace(".", "").replace("-", "").replace("+", "").isdigit()
+                for v in non_empty
+            ):
+                # This row redefines leader names
+                new_leaders = []
+                for v in data_vals:
+                    if v:
+                        new_leaders.append(v)
+                    elif new_leaders:
+                        new_leaders.append(new_leaders[-1])  # carry forward
+                if len(new_leaders) == len(current_leaders):
+                    current_leaders = new_leaders
+                    logger.info("Satisfaction leader rename: %s", current_leaders)
+                continue  # skip this row
+
+            # Check for duplicate header row (Date, Firm, etc.)
+            if str(row["Date"]).strip() in ("Date", ""):
+                continue
+
+            # This is a data row — assign proper column names
+            row_data = {"Date": row["Date"], "Firm": row["Firm"], "Sample size": row["Sample size"]}
+            sub_cycle = ["Satisfied", "Dissatisfied", "Don't know", "Net"]
+            for col_idx, col in enumerate(data_cols):
+                leader = current_leaders[col_idx] if col_idx < len(current_leaders) else "Unknown"
+                sub = sub_cycle[col_idx % len(sub_cycle)]
+                proper_name = f"{leader} {sub}"
+                row_data[proper_name] = row[col]
+            final_rows.append(row_data)
+
+        if not final_rows:
+            return pd.DataFrame()
+
+        result = pd.DataFrame(final_rows)
+
+        # Rename Firm -> Brand for consistency
+        if "Firm" in result.columns and "Brand" not in result.columns:
+            result = result.rename(columns={"Firm": "Brand"})
+
+        return result
+
+    @staticmethod
     def fix_satisfaction_columns(df: pd.DataFrame) -> pd.DataFrame:
         """Fix satisfaction table columns that have 'Unnamed' in level 1.
 
@@ -457,26 +718,39 @@ class WikipediaPollingScaper:
         if not unnamed_cols:
             return df
 
-        # The first data row might contain sub-headers like "Pos.", "Neg.", etc.
-        # Check the first few rows to find the sub-header row
+        # Standard sub-header pattern per leader group
+        subheader_cycle = ["Satisfied", "Dissatisfied", "Don't know", "Net"]
+
+        # Process sub-header rows one at a time. After each rename,
+        # recalculate unnamed_cols since column names have changed.
+        rows_to_drop = 0
         for row_idx in range(min(3, len(df))):
+            unnamed_cols = [c for c in df.columns if "unnamed" in c.lower()]
+            if not unnamed_cols:
+                break
+
             row = df.iloc[row_idx]
-            # Check if this row has sub-header values
+            unnamed_vals = {
+                col: str(row[col]).lower().strip() if pd.notna(row[col]) else ""
+                for col in unnamed_cols
+            }
+
+            # Case 1: Pos/Neg sub-headers
             has_subheaders = any(
-                str(v).lower().strip().rstrip(".") in ["pos", "neg", "dk", "net"]
-                for v in row.values
-                if pd.notna(v)
+                v.rstrip(".") in ["pos", "neg", "dk", "net"]
+                for v in unnamed_vals.values()
             )
             if has_subheaders:
-                # Build column rename mapping
                 renames = {}
                 for col in unnamed_cols:
-                    val = str(row[col]).lower().strip() if pd.notna(row[col]) else ""
+                    val = unnamed_vals[col]
                     if val in subheader_map:
-                        # Extract leader name from column (e.g., "Albanese Unnamed: 3_level_1" -> "Albanese")
-                        leader = col.split()[0] if " " in col else col
+                        parts = col.split()
+                        leader = next(
+                            (p for p in parts if "unnamed" not in p.lower() and "level" not in p.lower()),
+                            col,
+                        )
                         renames[col] = f"{leader} {subheader_map[val]}"
-
                 if renames:
                     df = df.rename(columns=renames)
                     logger.info(
@@ -484,9 +758,40 @@ class WikipediaPollingScaper:
                         len(renames),
                         row_idx,
                     )
-                    # Drop the sub-header row and any duplicate header rows
-                    df = df.iloc[row_idx + 1 :].reset_index(drop=True)
-                break
+                rows_to_drop = row_idx + 1
+                continue
+
+            # Case 2: Leader name rename row (e.g. after mid-table split)
+            non_empty = {col: v for col, v in unnamed_vals.items() if v}
+            if non_empty and not any(
+                v.replace("%", "").replace(".", "").replace("-", "").isdigit()
+                for v in non_empty.values()
+            ):
+                renames = {}
+                leader_col_idx = 0
+                for col in unnamed_cols:
+                    val = unnamed_vals[col]
+                    if val:
+                        sub = subheader_cycle[leader_col_idx % len(subheader_cycle)]
+                        renames[col] = f"{val.title()} {sub}"
+                        leader_col_idx += 1
+                    else:
+                        leader_col_idx += 1
+                if renames:
+                    df = df.rename(columns=renames)
+                    logger.info(
+                        "Fixed %d satisfaction columns (leader rename) from row %d",
+                        len(renames),
+                        row_idx,
+                    )
+                rows_to_drop = row_idx + 1
+                continue
+
+            # Data row — stop
+            break
+
+        if rows_to_drop > 0:
+            df = df.iloc[rows_to_drop:].reset_index(drop=True)
 
         return df
 
@@ -573,6 +878,7 @@ class WikipediaPollingScaper:
         df_list: list[pd.DataFrame],
         must_have: list[str] | None = None,
         any_of: list[str] | None = None,
+        contiguous: bool = True,
     ) -> list[int] | None:
         """Get indices of tables that are likely to contain polling data matching the specified patterns.
 
@@ -580,6 +886,9 @@ class WikipediaPollingScaper:
             df_list: List of DataFrames from Wikipedia page
             must_have: List of patterns that must ALL be present in column names (AND logic)
             any_of: List of patterns where ANY can be present (OR logic) - used instead of must_have
+            contiguous: If True, stop at the first non-matching table after finding matches
+                (suitable for voting intention where tables are adjacent). If False, scan all
+                tables on the page (suitable for attitudinal data split across year sections).
 
         Assumptions:
         - There may be some initial tables that are a prelude or introduction, and they should be skipped.
@@ -598,22 +907,25 @@ class WikipediaPollingScaper:
                 # expectation: polls will have multiindex columns
                 skip = True
             else:
-                level_0 = df.columns.get_level_values(0).str.lower()
+                # Check all column levels for pattern matching
+                all_levels = set()
+                for level in range(df.columns.nlevels):
+                    all_levels.update(df.columns.get_level_values(level).str.lower())
                 if any_of is not None:
-                    # OR logic: skip if NONE of the patterns match
+                    # OR logic: skip if NONE of the patterns match any level
                     if not any(
-                        any(pattern in label for label in level_0) for pattern in any_of
+                        any(pattern in label for label in all_levels) for pattern in any_of
                     ):
                         skip = True
                 elif must_have is not None:
                     # AND logic: skip if ANY pattern doesn't match
                     for check in must_have:
-                        if not any(check in label for label in level_0):
+                        if not any(check in label for label in all_levels):
                             skip = True
-            if skip and prelude:
-                continue  # skip any prelude tables
-            if skip and not prelude:
-                break  # we have finished collecting national voting intention tables
+            if skip:
+                if contiguous and not prelude:
+                    break  # we have finished collecting contiguous tables
+                continue
 
             # --- keep this table
             prelude = False
@@ -633,6 +945,7 @@ class WikipediaPollingScaper:
         table_indices: list[int] | None = None,
         must_have: list[str] | None = None,
         any_of: list[str] | None = None,
+        contiguous: bool = True,
     ) -> pd.DataFrame | None:
         """Get national polling tables using the simple approach with manual table selection."""
         try:
@@ -640,7 +953,7 @@ class WikipediaPollingScaper:
             table_years = getattr(self.url_handler, "_table_years", {})
             logger.info("Found %d tables on Wikipedia page", len(df_list))
             table_indices = (
-                self.get_polling_table_indices(df_list, must_have, any_of)
+                self.get_polling_table_indices(df_list, must_have, any_of, contiguous=contiguous)
                 if table_indices is None
                 else table_indices
             )
@@ -996,13 +1309,49 @@ class WikipediaPollingScaper:
         self, table_indices: list[int] | None = None
     ) -> pd.DataFrame:
         """Scrape attitudinal and leadership polling data using the simple table extraction approach."""
-        # Get Party leaders table (preferred PM)
-        pm_df = self.get_tables_simple(table_indices, must_have=["party leaders"])
+        # Get Party leaders table (preferred PM) - scan all tables, not just contiguous
+        pm_df = self.get_tables_simple(table_indices, must_have=["party leaders"], contiguous=False)
+        if pm_df is not None:
+            pm_df = self.fix_midtable_leader_change(pm_df)
 
-        # Get Satisfaction table (Albanese/Ley satisfaction)
-        sat_df = self.get_tables_simple(table_indices, any_of=["albanese", "ley"])
-        if sat_df is not None:
-            sat_df = self.fix_satisfaction_columns(sat_df)
+        # Get Satisfaction tables - these have "unnamed" in their column headers
+        # (because the leader names span multiple sub-columns: Pos./Neg./DK/Net).
+        # This distinguishes them from other tables that mention leader names
+        # (favourability, preferred leader, etc.) which have proper column names.
+        sat_search = [PM_LEADER.lower()] + [l.lower() for l in OPPOSITION_LEADERS]
+        df_list = self.url_handler.get_table_list(self.url)
+        sat_indices = self.get_polling_table_indices(df_list, any_of=sat_search, contiguous=False)
+        if sat_indices:
+            # Filter to tables that have "unnamed" columns (satisfaction sub-header structure)
+            sat_indices = [
+                i for i in sat_indices
+                if any("unnamed" in str(c).lower() for c in df_list[i].columns.get_level_values(0))
+                or any("unnamed" in str(c).lower() for c in df_list[i].columns.get_level_values(1))
+            ]
+            logger.info("Satisfaction table indices after filtering: %s", sat_indices)
+        # Process each satisfaction table from its raw MultiIndex form
+        table_years = getattr(self.url_handler, "_table_years", {})
+        sat_tables = []
+        for idx in (sat_indices or []):
+            t = self.process_satisfaction_table(df_list[idx])
+            if t.empty:
+                continue
+            # Append year to dates that lack one
+            if idx in table_years and "Date" in t.columns:
+                year = table_years[idx]
+                year_pat = re.compile(r"\d{4}")
+                t["Date"] = t["Date"].apply(
+                    lambda d, y=year: (
+                        f"{d} {y}"
+                        if isinstance(d, str) and not year_pat.search(d)
+                        else d
+                    )
+                )
+            sat_tables.append(t)
+        if sat_tables:
+            sat_df = pd.concat(sat_tables, ignore_index=True)
+        else:
+            sat_df = None
 
         # Merge the tables on Date and Brand/Firm
         if pm_df is not None and sat_df is not None and not sat_df.empty:
@@ -1037,11 +1386,12 @@ class WikipediaPollingScaper:
             raw_extracted_df = raw_extracted_df.rename(columns=col_renames)
 
         # Define filter for attitudinal columns
+        all_leaders = [PM_LEADER] + OPPOSITION_LEADERS
+
         def is_attitudinal_col(col: str) -> bool:
             col_lower = col.lower()
             return (
-                "ley" in col_lower
-                or "albanese" in col_lower
+                any(leader.lower() in col_lower for leader in all_leaders)
                 or "prime minister" in col_lower
                 or "party leaders" in col_lower
             )
@@ -1056,7 +1406,7 @@ class WikipediaPollingScaper:
             return pd.DataFrame()
 
         # Define the groups with specific patterns for completeness checking
-        groups = ["Preferred prime minister", "Albanese ", "Ley "]
+        groups = ["Preferred prime minister"] + [f"{l} " for l in all_leaders]
 
         # Check completeness for attitudinal polling
         for group in groups:
