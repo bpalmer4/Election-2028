@@ -1300,6 +1300,31 @@ class WikipediaPollingScaper:
             upper=self.TPP_VOTE_UPPER,
         )
 
+        # Essential publishes 2PP with an undecided share. Wiki editors
+        # usually redistribute it but sometimes leave the raw ALP/L-NP pair
+        # (sum ~93). Rescue those rows by renormalising to 100.
+        if {"Brand", "2PP vote ALP", "2PP vote L/NP"}.issubset(processed_df.columns):
+            alp = processed_df["2PP vote ALP"]
+            lnp = processed_df["2PP vote L/NP"]
+            tpp_sum = alp + lnp
+            is_essential = processed_df["Brand"].str.contains(
+                "Essential", case=False, na=False
+            )
+            needs_redist = (
+                is_essential & alp.notna() & lnp.notna() & tpp_sum.between(85, 99)
+            )
+            if needs_redist.any():
+                logger.info(
+                    "Redistributing implicit undecided in %d Essential 2PP rows",
+                    needs_redist.sum(),
+                )
+                processed_df.loc[needs_redist, "2PP vote ALP"] = (
+                    alp[needs_redist] / tpp_sum[needs_redist] * 100
+                )
+                processed_df.loc[needs_redist, "2PP vote L/NP"] = (
+                    lnp[needs_redist] / tpp_sum[needs_redist] * 100
+                )
+
         # - flag problematic polls that still don't sum to 100
         processed_df = self.flag_problematic_polls(df=processed_df)
 
