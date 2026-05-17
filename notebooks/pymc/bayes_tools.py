@@ -692,6 +692,7 @@ def check_residuals(
     verbose: bool = True,
     plot_suspects: bool = True,
     show: bool = True,
+    series_label: str | None = None,
     **kwargs,
 ) -> pd.DataFrame:
     """Check residuals by pollster to detect potential methodology changes.
@@ -888,7 +889,7 @@ def check_residuals(
 
     # Plot residuals for suspect pollsters
     if plot_suspects and suspect_data:
-        column = inputs.get("column", "Unknown")
+        label = series_label if series_label is not None else inputs.get("column", "Unknown")
         for data in suspect_data:
             _plot_residuals(
                 firm_name=data["firm_name"],
@@ -896,7 +897,7 @@ def check_residuals(
                 firm_residuals=data["firm_residuals"],
                 sigma_mean=sigma_mean,
                 day_zero=inputs["day_zero"],
-                column=column,
+                column=label,
                 issues=data["issues"],
                 show=show,
                 **kwargs,

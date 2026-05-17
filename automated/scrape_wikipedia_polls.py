@@ -45,6 +45,52 @@ class URLHandler:
     TIMEOUT_SECONDS = 15
     RETRY_STATUS_CODES = [429, 500, 502, 503, 504]
 
+    # Unicode space chars Wikipedia editors sometimes use in place of plain
+    # ASCII spaces (NBSP, narrow NBSP, thin/hair/figure/punctuation/medium-math,
+    # ogham, ideographic). Normalised to a regular space so downstream
+    # exact-match comparisons (e.g. groupbys on Brand) are stable.
+    _SPACE_CHARS = "        　"
+    # Invisible bidi/zero-width formatting marks (LRM/RLM, ZWSP/ZWNJ/ZWJ,
+    # WJ, BOM, bidi embeds/isolates) that editors sometimes leave in cell
+    # text. Stripped entirely so Brand strings stay stable.
+    _INVISIBLE_CHARS = (
+        "​‌‍‎‏⁠﻿"
+        "‪‫‬‭‮"
+        "⁦⁧⁨⁩"
+    )
+    _SPACE_TRANSLATION = str.maketrans(
+        {c: " " for c in _SPACE_CHARS} | {c: None for c in _INVISIBLE_CHARS}
+    )
+
+    @classmethod
+    def _clean_str(cls, s: str) -> str:
+        return s.translate(cls._SPACE_TRANSLATION).strip()
+
+    @classmethod
+    def _normalise_spaces(cls, df: pd.DataFrame) -> pd.DataFrame:
+        """Normalise non-ASCII spaces and strip invisible bidi/zero-width
+        marks in column names and string cells."""
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = pd.MultiIndex.from_tuples(
+                [
+                    tuple(
+                        cls._clean_str(c) if isinstance(c, str) else c
+                        for c in tup
+                    )
+                    for tup in df.columns
+                ]
+            )
+        else:
+            df.columns = [
+                cls._clean_str(c) if isinstance(c, str) else c
+                for c in df.columns
+            ]
+        for col in df.select_dtypes(include="object").columns:
+            df[col] = df[col].map(
+                lambda v: cls._clean_str(v) if isinstance(v, str) else v
+            )
+        return df
+
     def __init__(self):
         self.session = self._create_session_with_retry()
 
@@ -102,8 +148,18 @@ class URLHandler:
         df_list = []
         self._table_years: dict[int, str] = {}
         for table in wikitables:
+            # Sanitize colspan/rowspan: editors occasionally type "2;" etc.,
+            # which makes pd.read_html raise "invalid literal for int()".
+            for cell in table.find_all(["td", "th"]):
+                for attr in ("colspan", "rowspan"):
+                    if cell.has_attr(attr):
+                        raw = cell[attr]
+                        value = " ".join(raw) if isinstance(raw, list) else str(raw)
+                        digits = re.sub(r"\D", "", value)
+                        cell[attr] = digits if digits else "1"
             idx = len(df_list)
-            df_list.extend(pd.read_html(StringIO(str(table)), header=header))
+            new_dfs = pd.read_html(StringIO(str(table)), header=header)
+            df_list.extend(self._normalise_spaces(d) for d in new_dfs)
             # Extract year from preceding heading (e.g. "2026", "2025")
             prev_heading = table.find_previous(["h2", "h3", "h4"])
             if prev_heading:
