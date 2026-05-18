@@ -1,3 +1,4 @@
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,88 @@ TPP_SUM_UPPER = 101
 # to total 100.
 ESSENTIAL_REDIST_LOWER = 85
 ESSENTIAL_REDIST_UPPER = 99
+
+# 2025 preference flow file used by the 2025-flow derived 2pp builder.
+PREF_FLOWS_2025 = Path(
+    "../historic-data/preferences/2025-two-party-preferred-flow-by-party.csv"
+)
+
+# ALP share of preferences (0–1) for an ALP-vs-ONP matchup. The AEC didn't
+# run national ALP-vs-ONP 2pp counts in 2025, so we use two reference flow
+# sets. The "Others" bucket combines IND + OTH because pollsters don't all
+# break IND out — applying separate IND vs OTH rates would amplify pollster
+# bucketing noise rather than reduce it.
+#
+# Bonham SA 2026 rates — from the Kevin Bonham aggregation post analysing
+# the 2026 South Australian election. He published L/NP, GRN and IND only;
+# we apply his IND rate to the combined Others bucket.
+BONHAM_SA26_FLOWS = {"L/NP": 0.339, "GRN": 0.848, "Others": 0.559}
+
+# Theoretical clean-round flows. GRN strongly prefers ALP over ONP; L/NP
+# weakly prefers ONP over ALP; Others sits roughly mid-range (the bucket
+# blends ALP-favouring IND with ONP-favouring minor parties).
+THEORETICAL_ONP_FLOWS = {"L/NP": 0.25, "GRN": 0.90, "Others": 0.50}
+
+
+def format_flow_rates(flows: dict[str, float]) -> str:
+    """Format an ALP-share flow dict as 'L/NP 33.9, GRN 84.8, Others 55.9'.
+
+    Integers print without a decimal point (25 not 25.0); fractional values
+    round to one decimal place.
+    """
+    parts = []
+    for key, val in flows.items():
+        pct = round(val * 100, 1)
+        if pct == int(pct):
+            parts.append(f"{key} {int(pct)}")
+        else:
+            parts.append(f"{key} {pct}")
+    return ", ".join(parts)
+
+
+@lru_cache(maxsize=1)
+def alp_flow_rates_2025() -> dict[str, float]:
+    """ALP share (0–1) of preferences for each non-major-party bucket at
+    the 2025 federal election (ALP-vs-L/NP context).
+
+    Buckets: GRN, ONP, Others. "Others" is the weighted average of IND +
+    every other minor party in the AEC flow file.
+    """
+    df = pd.read_csv(PREF_FLOWS_2025)
+    rates: dict[str, float] = {}
+    for ab, key in (("GRN", "GRN"), ("ON", "ONP")):
+        row = df[df["PartyAb"] == ab].iloc[0]
+        rates[key] = float(row["Australian Labor Party Transfer Percentage"]) / 100.0
+    others = df[~df["PartyAb"].isin(["LP", "NP", "GRN", "ON"]) & df["PartyAb"].notna()]
+    alp_votes = others["Australian Labor Party Transfer Votes"].sum()
+    lnp_votes = others["Liberal/National Coalition Transfer Votes"].sum()
+    rates["Others"] = float(alp_votes / (alp_votes + lnp_votes))
+    return rates
+
+
+def derived_2pp_variants() -> list[dict]:
+    """Recipes for every derived ALP 2pp series. Each variant produces
+    ``2PP {name} ALP`` and ``2PP {name} {counter}`` columns."""
+    return [
+        {
+            "name": "synth-2025",
+            "counter": "L/NP",
+            "flows": alp_flow_rates_2025(),
+            "label": "Synthetic",
+        },
+        {
+            "name": "synth-sa26",
+            "counter": "ONP",
+            "flows": BONHAM_SA26_FLOWS,
+            "label": "SA26 shadow",
+        },
+        {
+            "name": "synth-th",
+            "counter": "ONP",
+            "flows": THEORETICAL_ONP_FLOWS,
+            "label": "Theory shadow",
+        },
+    ]
 
 
 def _validate_and_normalise_2pp(df: pd.DataFrame) -> pd.DataFrame:
@@ -78,6 +161,51 @@ def _validate_and_normalise_2pp(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _add_others_primary_vote(df: pd.DataFrame) -> pd.DataFrame:
+    """Sum non-major primary-vote columns (IND, OTH, etc) into a single
+    ``Others Primary Vote`` column. Idempotent.
+
+    Wikipedia pollsters inconsistently break out IND — some lump
+    independents into OTH. The combined bucket sidesteps that ambiguity.
+    """
+    main = ["Primary vote ALP", "Primary vote L/NP", "Primary vote GRN", "Primary vote ONP"]
+    others_cols = [c for c in df.columns if "Primary vote" in c and c not in main]
+    if not others_cols:
+        return df
+    df = df.copy()
+    df["Others Primary Vote"] = df[others_cols].sum(axis=1, skipna=True)
+    all_nan = df[others_cols].isna().all(axis=1)
+    df.loc[all_nan, "Others Primary Vote"] = np.nan
+    return df
+
+
+def add_derived_2pp(df: pd.DataFrame, variant: dict) -> pd.DataFrame:
+    """Add ``2PP {variant['name']} ALP`` and ``2PP {variant['name']} {counter}``
+    columns derived from poll primaries using the variant's flow rates.
+
+    A row gets a derived 2pp only when the four major-party primaries
+    (ALP, L/NP, GRN, ONP) are all populated. Buckets not in the flow dict
+    contribute nothing to the ALP share — typically ALP itself (100% by
+    definition, added directly) and the counter party (0%, omitted).
+    """
+    df = df.copy()
+    required = ["Primary vote ALP", "Primary vote L/NP", "Primary vote GRN", "Primary vote ONP"]
+    if not all(c in df.columns for c in required):
+        return df
+    have_all = df[required].notna().all(axis=1)
+
+    synth_alp = df["Primary vote ALP"].copy()
+    for key, rate in variant["flows"].items():
+        col = "Others Primary Vote" if key == "Others" else f"Primary vote {key}"
+        synth_alp = synth_alp + df[col].fillna(0) * rate
+
+    name = variant["name"]
+    counter = variant["counter"]
+    df[f"2PP {name} ALP"] = synth_alp.where(have_all)
+    df[f"2PP {name} {counter}"] = (100 - synth_alp).where(have_all)
+    return df
+
+
 def load_polling_data(data_type: str = "voting_intention") -> pd.DataFrame:
     """Load the most recent polling data with data freshness validation.
 
@@ -132,5 +260,8 @@ def load_polling_data(data_type: str = "voting_intention") -> pd.DataFrame:
     # filtering downstream is sufficient to de-duplicate primaries.
     if data_type == "voting_intention":
         df = _validate_and_normalise_2pp(df)
+        df = _add_others_primary_vote(df)
+        for variant in derived_2pp_variants():
+            df = add_derived_2pp(df, variant)
 
     return df

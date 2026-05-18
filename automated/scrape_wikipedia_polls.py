@@ -1438,8 +1438,11 @@ class WikipediaPollingScaper:
         if pm_df is not None and sat_df is not None and not sat_df.empty:
             # Ensure both have Brand column
             for df in [pm_df, sat_df]:
-                if "Firm" in df.columns and "Brand" not in df.columns:
-                    df.rename(columns={"Firm": "Brand"}, inplace=True)
+                if "Brand" not in df.columns:
+                    for alt in ("Firm", "Polling Firm"):
+                        if alt in df.columns:
+                            df.rename(columns={alt: "Brand"}, inplace=True)
+                            break
             raw_extracted_df = pd.merge(
                 pm_df, sat_df, on=["Date", "Brand", "Sample size"], how="outer"
             )
