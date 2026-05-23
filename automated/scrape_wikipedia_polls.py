@@ -748,9 +748,12 @@ class WikipediaPollingScaper:
 
         result = pd.DataFrame(final_rows)
 
-        # Rename Firm -> Brand for consistency
-        if "Firm" in result.columns and "Brand" not in result.columns:
-            result = result.rename(columns={"Firm": "Brand"})
+        # Rename Firm / Polling Firm -> Brand for consistency (case-insensitive)
+        if "Brand" not in result.columns:
+            for col in result.columns:
+                if isinstance(col, str) and col.lower() in ("firm", "polling firm"):
+                    result = result.rename(columns={col: "Brand"})
+                    break
 
         return result
 
@@ -1185,16 +1188,17 @@ class WikipediaPollingScaper:
         if raw_df is None or raw_df.empty:
             return pd.DataFrame()
 
-        # Handle inconsistent column names
+        # Handle inconsistent column names (case-insensitive)
         if "Brand" not in raw_df.columns:
-            for alt in ("Firm", "Polling Firm"):
-                if alt in raw_df.columns:
-                    raw_df = raw_df.rename(columns={alt: "Brand"})
+            for col in raw_df.columns:
+                if isinstance(col, str) and col.lower() in ("firm", "polling firm"):
+                    raw_df = raw_df.rename(columns={col: "Brand"})
                     break
 
-        # Delete information/header rows
-        header_values = {"Polling Firm", "Firm", "Brand", "Date"}
-        mask = raw_df["Brand"].notna() & ~raw_df["Brand"].isin(header_values)
+        # Delete information/header rows (case-insensitive)
+        header_values_lower = {"polling firm", "firm", "brand", "date"}
+        brand_lower = raw_df["Brand"].astype("string").str.lower()
+        mask = raw_df["Brand"].notna() & ~brand_lower.isin(header_values_lower)
         if "Interview mode" in raw_df.columns:
             mask = mask & (raw_df["Brand"] != raw_df["Interview mode"])
         df = raw_df[mask].copy()
@@ -1320,6 +1324,18 @@ class WikipediaPollingScaper:
                     n_cleared,
                 )
 
+        # Some polls (e.g. DemosAU with no 2PP reported) are split by Wikipedia
+        # into identical rows. The 2PP-based clearing above can't catch these
+        # because neither row carries a 2PP value, so both keep their primaries
+        # and double-count. Drop byte-identical rows. Legitimate split rows
+        # differ (distinct 2PP, and the alt-matchup row had primaries cleared
+        # above), so they are unaffected.
+        n_before = len(processed_df)
+        processed_df = processed_df.drop_duplicates()
+        n_dropped = n_before - len(processed_df)
+        if n_dropped:
+            logger.info("Dropped %d exact-duplicate poll row(s)", n_dropped)
+
         # Check for completeness
         processed_df = self.check_completeness(
             pattern="Primary",
@@ -1436,12 +1452,12 @@ class WikipediaPollingScaper:
 
         # Merge the tables on Date and Brand/Firm
         if pm_df is not None and sat_df is not None and not sat_df.empty:
-            # Ensure both have Brand column
+            # Ensure both have Brand column (case-insensitive)
             for df in [pm_df, sat_df]:
                 if "Brand" not in df.columns:
-                    for alt in ("Firm", "Polling Firm"):
-                        if alt in df.columns:
-                            df.rename(columns={alt: "Brand"}, inplace=True)
+                    for col in df.columns:
+                        if isinstance(col, str) and col.lower() in ("firm", "polling firm"):
+                            df.rename(columns={col: "Brand"}, inplace=True)
                             break
             raw_extracted_df = pd.merge(
                 pm_df, sat_df, on=["Date", "Brand", "Sample size"], how="outer"

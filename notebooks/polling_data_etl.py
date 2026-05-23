@@ -34,6 +34,9 @@ BONHAM_SA26_FLOWS = {"L/NP": 0.339, "GRN": 0.848, "Others": 0.559}
 # Theoretical clean-round flows. GRN strongly prefers ALP over ONP; L/NP
 # weakly prefers ONP over ALP; Others sits roughly mid-range (the bucket
 # blends ALP-favouring IND with ONP-favouring minor parties).
+# Currently unused: the "synth-th" variant in derived_2pp_variants() that
+# consumes these flows is commented out. Kept here so re-enabling it is a
+# one-line uncomment.
 THEORETICAL_ONP_FLOWS = {"L/NP": 0.25, "GRN": 0.90, "Others": 0.50}
 
 
@@ -81,20 +84,21 @@ def derived_2pp_variants() -> list[dict]:
             "name": "synth-2025",
             "counter": "L/NP",
             "flows": alp_flow_rates_2025(),
-            "label": "Synthetic",
+            "label": "2025 election",
         },
         {
             "name": "synth-sa26",
             "counter": "ONP",
             "flows": BONHAM_SA26_FLOWS,
-            "label": "SA26 shadow",
+            "label": "Bonham SA26",
         },
-        {
-            "name": "synth-th",
-            "counter": "ONP",
-            "flows": THEORETICAL_ONP_FLOWS,
-            "label": "Theory shadow",
-        },
+        # synth-th (theoretical clean-round flows) disabled — uncomment to re-enable.
+        # {
+        #     "name": "synth-th",
+        #     "counter": "ONP",
+        #     "flows": THEORETICAL_ONP_FLOWS,
+        #     "label": "Theoretical",
+        # },
     ]
 
 
