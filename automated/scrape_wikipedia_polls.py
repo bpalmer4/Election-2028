@@ -53,11 +53,7 @@ class URLHandler:
     # Invisible bidi/zero-width formatting marks (LRM/RLM, ZWSP/ZWNJ/ZWJ,
     # WJ, BOM, bidi embeds/isolates) that editors sometimes leave in cell
     # text. Stripped entirely so Brand strings stay stable.
-    _INVISIBLE_CHARS = (
-        "​‌‍‎‏⁠﻿"
-        "‪‫‬‭‮"
-        "⁦⁧⁨⁩"
-    )
+    _INVISIBLE_CHARS = "​‌‍‎‏⁠﻿‪‫‬‭‮⁦⁧⁨⁩"
     _SPACE_TRANSLATION = str.maketrans(
         {c: " " for c in _SPACE_CHARS} | {c: None for c in _INVISIBLE_CHARS}
     )
@@ -73,17 +69,13 @@ class URLHandler:
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = pd.MultiIndex.from_tuples(
                 [
-                    tuple(
-                        cls._clean_str(c) if isinstance(c, str) else c
-                        for c in tup
-                    )
+                    tuple(cls._clean_str(c) if isinstance(c, str) else c for c in tup)
                     for tup in df.columns
                 ]
             )
         else:
             df.columns = [
-                cls._clean_str(c) if isinstance(c, str) else c
-                for c in df.columns
+                cls._clean_str(c) if isinstance(c, str) else c for c in df.columns
             ]
         for col in df.select_dtypes(include="object").columns:
             df[col] = df[col].map(
@@ -307,7 +299,7 @@ class DateParser:
                 return None
 
             return StringDateItems(day=f"{d:02d}", month=month, year=year)
-        except (ValueError, KeyError, AttributeError):
+        except ValueError, KeyError, AttributeError:
             return None
 
     @classmethod
@@ -315,7 +307,7 @@ class DateParser:
         """Convert validated StringDateItems to datetime.date."""
         try:
             return datetime.date(int(sd.year), int(cls.MONTHS[sd.month]), int(sd.day))
-        except (ValueError, KeyError):
+        except ValueError, KeyError:
             return None
 
     @classmethod
@@ -393,7 +385,6 @@ class WikipediaPollingScaper:
     ATTITUDINAL_VOTE_LOWER = 99
     ATTITUDINAL_VOTE_UPPER = 101
 
-
     @staticmethod
     def flatten_col_names(columns: pd.Index) -> list[str]:
         """Flatten the hierarchical column index."""
@@ -434,17 +425,17 @@ class WikipediaPollingScaper:
         cols_to_drop: list[str] = []
         for base, dupes in base_to_dupes.items():
             all_cols = [base] + dupes
-            logger.info(
-                "Merging duplicate columns: %s -> %s", all_cols, base
-            )
+            logger.info("Merging duplicate columns: %s -> %s", all_cols, base)
             # Strip % signs and convert to numeric for comparison
-            numeric_df = pd.DataFrame({
-                c: pd.to_numeric(
-                    df[c].astype(str).str.replace("%", "", regex=False).str.strip(),
-                    errors="coerce",
-                )
-                for c in all_cols
-            })
+            numeric_df = pd.DataFrame(
+                {
+                    c: pd.to_numeric(
+                        df[c].astype(str).str.replace("%", "", regex=False).str.strip(),
+                        errors="coerce",
+                    )
+                    for c in all_cols
+                }
+            )
 
             # Colspan makes multiple sub-columns share the same value.
             # For each row, deduplicate identical values then sum the distinct ones.
@@ -518,14 +509,20 @@ class WikipediaPollingScaper:
         annotation_rows = []
         for idx in range(len(df)):
             row = df.iloc[idx]
-            str_vals = [str(v).strip() for v in row.values if pd.notna(v) and str(v).strip()]
+            str_vals = [
+                str(v).strip() for v in row.values if pd.notna(v) and str(v).strip()
+            ]
             if not str_vals:
                 continue
             # Check if most non-empty values are the same long string
             from collections import Counter
+
             counts = Counter(str_vals)
             most_common_val, most_common_count = counts.most_common(1)[0]
-            if most_common_count >= MIN_REPEAT_COLS and len(most_common_val) >= MIN_ANNOTATION_LEN:
+            if (
+                most_common_count >= MIN_REPEAT_COLS
+                and len(most_common_val) >= MIN_ANNOTATION_LEN
+            ):
                 annotation_rows.append(idx)
 
         if not annotation_rows:
@@ -547,8 +544,15 @@ class WikipediaPollingScaper:
                     # This looks like a data row, not a sub-header
                     # Check if it could still be a sub-header (all values are short non-numeric)
                     non_meta = sub_row.iloc[3:]  # skip Date, Firm, Sample size
-                    str_non_meta = [str(v).strip() for v in non_meta if pd.notna(v) and str(v).strip()]
-                    if not str_non_meta or any(v.replace("%", "").replace(".", "").replace("-", "").isdigit() for v in str_non_meta):
+                    str_non_meta = [
+                        str(v).strip()
+                        for v in non_meta
+                        if pd.notna(v) and str(v).strip()
+                    ]
+                    if not str_non_meta or any(
+                        v.replace("%", "").replace(".", "").replace("-", "").isdigit()
+                        for v in str_non_meta
+                    ):
                         break  # This is actual data
                 rows_to_drop.add(sub_idx)
 
@@ -558,7 +562,11 @@ class WikipediaPollingScaper:
                     val = sub_row.iloc[col_idx]
                     if pd.notna(val):
                         val_str = str(val).strip()
-                        if val_str and val_str != col_name and len(val_str) < MIN_ANNOTATION_LEN:
+                        if (
+                            val_str
+                            and val_str != col_name
+                            and len(val_str) < MIN_ANNOTATION_LEN
+                        ):
                             # This sub-header redefines this column
                             # Build new column name: replace the leader name part
                             # e.g. "Party leaders Taylor" -> "Party leaders Ley"
@@ -573,7 +581,7 @@ class WikipediaPollingScaper:
                     # Apply renames to all rows AFTER the annotation.
                     # If renaming to a column that already exists, merge
                     # the data (fill NaNs) rather than creating duplicates.
-                    post_section = df.iloc[sub_idx + 1:].copy()
+                    post_section = df.iloc[sub_idx + 1 :].copy()
                     for old_col, new_col in renames.items():
                         if old_col not in post_section.columns:
                             continue
@@ -584,7 +592,9 @@ class WikipediaPollingScaper:
                             )
                             post_section = post_section.drop(columns=[old_col])
                         else:
-                            post_section = post_section.rename(columns={old_col: new_col})
+                            post_section = post_section.rename(
+                                columns={old_col: new_col}
+                            )
                     pre_section = df.iloc[:ann_idx]
                     df = pd.concat([pre_section, post_section], ignore_index=True)
                     # Adjust rows_to_drop since we've restructured
@@ -616,13 +626,19 @@ class WikipediaPollingScaper:
         ann_rows = []
         for idx in range(len(df)):
             row = df.iloc[idx]
-            str_vals = [str(v).strip() for v in row.values if pd.notna(v) and str(v).strip()]
+            str_vals = [
+                str(v).strip() for v in row.values if pd.notna(v) and str(v).strip()
+            ]
             if not str_vals:
                 continue
             from collections import Counter
+
             counts = Counter(str_vals)
             most_common_val, most_common_count = counts.most_common(1)[0]
-            if most_common_count >= MIN_REPEAT_COLS and len(most_common_val) >= MIN_ANNOTATION_LEN:
+            if (
+                most_common_count >= MIN_REPEAT_COLS
+                and len(most_common_val) >= MIN_ANNOTATION_LEN
+            ):
                 ann_rows.append(idx)
 
         if not ann_rows:
@@ -658,7 +674,12 @@ class WikipediaPollingScaper:
 
         Returns a DataFrame with columns like "Albanese Satisfied", "Ley Net", etc.
         """
-        SUB_MAP = {"pos.": "Satisfied", "neg.": "Dissatisfied", "dk": "Don't know", "net": "Net"}
+        SUB_MAP = {
+            "pos.": "Satisfied",
+            "neg.": "Dissatisfied",
+            "dk": "Don't know",
+            "net": "Net",
+        }
         MIN_ANNOTATION_LEN = 30
         MIN_REPEAT_COLS = 3
 
@@ -684,7 +705,9 @@ class WikipediaPollingScaper:
                 leaders_from_index.append(l0)
 
         # --- Flatten to single-level columns (just positional names for now) ---
-        flat_cols = ["Date", "Firm", "Sample size"] + [f"_col_{i}" for i in range(n_data_cols)]
+        flat_cols = ["Date", "Firm", "Sample size"] + [
+            f"_col_{i}" for i in range(n_data_cols)
+        ]
         df = raw_df.copy()
         df.columns = flat_cols
         data_cols = flat_cols[meta_cols:]
@@ -692,16 +715,21 @@ class WikipediaPollingScaper:
         # --- Process rows: find sub-headers, annotations, and data ---
         # Walk through rows, building sections with their leader mappings
         final_rows = []
-        current_leaders = list(leaders_from_index)  # can be overridden by mid-table rename
+        current_leaders = list(
+            leaders_from_index
+        )  # can be overridden by mid-table rename
 
         for row_idx in range(len(df)):
             row = df.iloc[row_idx]
-            data_vals = [str(row[c]).strip() if pd.notna(row[c]) else "" for c in data_cols]
+            data_vals = [
+                str(row[c]).strip() if pd.notna(row[c]) else "" for c in data_cols
+            ]
 
             # Check for annotation row
             non_empty = [v for v in data_vals if v]
             if non_empty:
                 from collections import Counter
+
                 counts = Counter(non_empty)
                 top_val, top_count = counts.most_common(1)[0]
                 if top_count >= MIN_REPEAT_COLS and len(top_val) >= MIN_ANNOTATION_LEN:
@@ -714,7 +742,11 @@ class WikipediaPollingScaper:
 
             # Check for leader rename row (short non-numeric strings)
             if non_empty and not any(
-                v.replace("%", "").replace(".", "").replace("-", "").replace("+", "").isdigit()
+                v.replace("%", "")
+                .replace(".", "")
+                .replace("-", "")
+                .replace("+", "")
+                .isdigit()
                 for v in non_empty
             ):
                 # This row redefines leader names
@@ -734,10 +766,18 @@ class WikipediaPollingScaper:
                 continue
 
             # This is a data row — assign proper column names
-            row_data = {"Date": row["Date"], "Firm": row["Firm"], "Sample size": row["Sample size"]}
+            row_data = {
+                "Date": row["Date"],
+                "Firm": row["Firm"],
+                "Sample size": row["Sample size"],
+            }
             sub_cycle = ["Satisfied", "Dissatisfied", "Don't know", "Net"]
             for col_idx, col in enumerate(data_cols):
-                leader = current_leaders[col_idx] if col_idx < len(current_leaders) else "Unknown"
+                leader = (
+                    current_leaders[col_idx]
+                    if col_idx < len(current_leaders)
+                    else "Unknown"
+                )
                 sub = sub_cycle[col_idx % len(sub_cycle)]
                 proper_name = f"{leader} {sub}"
                 row_data[proper_name] = row[col]
@@ -806,7 +846,12 @@ class WikipediaPollingScaper:
                     if val in subheader_map:
                         parts = col.split()
                         leader = next(
-                            (p for p in parts if "unnamed" not in p.lower() and "level" not in p.lower()),
+                            (
+                                p
+                                for p in parts
+                                if "unnamed" not in p.lower()
+                                and "level" not in p.lower()
+                            ),
                             col,
                         )
                         renames[col] = f"{leader} {subheader_map[val]}"
@@ -916,6 +961,9 @@ class WikipediaPollingScaper:
 
     def __init__(self, election_year: str = "next"):
         self.url = f"https://en.wikipedia.org/wiki/Opinion_polling_for_the_{election_year}_Australian_federal_election"
+        # Leadership approval / preferred-PM polling moved to its own Wikipedia
+        # page in 2026; attitudinal scraping reads from here, not self.url.
+        self.approval_url = f"https://en.wikipedia.org/wiki/Leadership_approval_opinion_polling_for_the_{election_year}_Australian_federal_election"
         self.election_year = election_year
         self.url_handler = URLHandler()
 
@@ -973,7 +1021,8 @@ class WikipediaPollingScaper:
                 if any_of is not None:
                     # OR logic: skip if NONE of the patterns match any level
                     if not any(
-                        any(pattern in label for label in all_levels) for pattern in any_of
+                        any(pattern in label for label in all_levels)
+                        for pattern in any_of
                     ):
                         skip = True
                 elif must_have is not None:
@@ -1005,14 +1054,17 @@ class WikipediaPollingScaper:
         must_have: list[str] | None = None,
         any_of: list[str] | None = None,
         contiguous: bool = True,
+        url: str | None = None,
     ) -> pd.DataFrame | None:
         """Get national polling tables using the simple approach with manual table selection."""
         try:
-            df_list = self.url_handler.get_table_list(self.url)
+            df_list = self.url_handler.get_table_list(url or self.url)
             table_years = getattr(self.url_handler, "_table_years", {})
             logger.info("Found %d tables on Wikipedia page", len(df_list))
             table_indices = (
-                self.get_polling_table_indices(df_list, must_have, any_of, contiguous=contiguous)
+                self.get_polling_table_indices(
+                    df_list, must_have, any_of, contiguous=contiguous
+                )
                 if table_indices is None
                 else table_indices
             )
@@ -1212,7 +1264,9 @@ class WikipediaPollingScaper:
             if _is_text_column(df[col]):
                 # Convert to string Series for .str accessor (preserves NaN)
                 as_str = df[col].astype("string")
-                df[col] = as_str.str.replace(r"\[[a-z0-9]+\]", "", regex=True).str.strip()
+                df[col] = as_str.str.replace(
+                    r"\[[a-z0-9]+\]", "", regex=True
+                ).str.strip()
 
         # Remove percents and convert to numeric for specified columns
         for col in df.columns:
@@ -1222,6 +1276,32 @@ class WikipediaPollingScaper:
                     as_str.str.replace("%", "", regex=False).str.strip(),
                     errors="coerce",
                 )
+
+        # Coalesce year-suffixed Date columns (e.g. "Date 2026") into "Date".
+        # These arise when a table's date header spans two rows (Date over a
+        # <year> sub-header) and gets flattened to "Date <year>" — as on the
+        # leadership-approval page's year-sectioned tables. Without this, the
+        # most recent (year-sectioned) rows keep their dates in a side column,
+        # parse to NaT, and silently drop out of date-sorted output.
+        year_date_cols = [
+            c
+            for c in df.columns
+            if isinstance(c, str) and re.fullmatch(r"Date \d{4}", c)
+        ]
+        if year_date_cols:
+            if "Date" not in df.columns:
+                df["Date"] = pd.NA
+            df["Date"] = df["Date"].astype("string")
+            has_year = re.compile(r"\d{4}")
+            for col in year_date_cols:
+                year = col.split()[1]
+                vals = df[col].astype("string")
+                # Append the section year to values that lack one, then coalesce
+                vals = vals.where(
+                    vals.isna() | vals.str.contains(has_year), vals + f" {year}"
+                )
+                df["Date"] = df["Date"].fillna(vals)
+            df = df.drop(columns=year_date_cols)
 
         # Parse dates
         df["parsed_date"] = DateParser.parse_series(df["Date"])
@@ -1246,7 +1326,8 @@ class WikipediaPollingScaper:
             # Identify optional columns (not reported by all pollsters)
             df_check = df[cols].copy()
             opt = [
-                c for c in cols
+                c
+                for c in cols
                 if "ind" in c.lower() or "oth" in c.lower() or "onp" in c.lower()
             ]
 
@@ -1269,18 +1350,28 @@ class WikipediaPollingScaper:
             incomplete = has_any_data & ~all_present
             return incomplete | complete_bad_sum
 
-        primary_problem = check_and_nan_bad_sums("primary", self.PRIMARY_VOTE_LOWER, self.PRIMARY_VOTE_UPPER)
-        tpp_problem = check_and_nan_bad_sums("2pp", self.TPP_VOTE_LOWER, self.TPP_VOTE_UPPER)
+        primary_problem = check_and_nan_bad_sums(
+            "primary", self.PRIMARY_VOTE_LOWER, self.PRIMARY_VOTE_UPPER
+        )
+        tpp_problem = check_and_nan_bad_sums(
+            "2pp", self.TPP_VOTE_LOWER, self.TPP_VOTE_UPPER
+        )
 
         # Only flag problems on rows that have the relevant data.
         # Alternative 2PP rows (ALP vs ONP) have primary cleared and no L/NP 2PP.
         primary_cols = [c for c in df.columns if "primary" in c.lower()]
-        has_primary = df[primary_cols].notna().any(axis=1) if primary_cols else pd.Series(False, index=df.index)
+        has_primary = (
+            df[primary_cols].notna().any(axis=1)
+            if primary_cols
+            else pd.Series(False, index=df.index)
+        )
         has_classic_2pp = (
             df.get("2PP vote ALP", pd.Series(dtype="float64")).notna()
             & df.get("2PP vote L/NP", pd.Series(dtype="float64")).notna()
         )
-        df["problematic"] = (primary_problem & has_primary) | (tpp_problem & has_classic_2pp)
+        df["problematic"] = (primary_problem & has_primary) | (
+            tpp_problem & has_classic_2pp
+        )
         return df
 
     def scrape_voting_intention_polls(
@@ -1309,10 +1400,16 @@ class WikipediaPollingScaper:
         alp_col = "2PP vote ALP"
         lnp_col = "2PP vote L/NP"
         primary_cols = [c for c in processed_df.columns if "primary" in c.lower()]
-        if alp_col in processed_df.columns and lnp_col in processed_df.columns and primary_cols:
+        if (
+            alp_col in processed_df.columns
+            and lnp_col in processed_df.columns
+            and primary_cols
+        ):
             tpp_cols = [c for c in processed_df.columns if "2pp" in c.lower()]
             has_any_2pp = processed_df[tpp_cols].notna().any(axis=1)
-            has_classic_2pp = processed_df[alp_col].notna() & processed_df[lnp_col].notna()
+            has_classic_2pp = (
+                processed_df[alp_col].notna() & processed_df[lnp_col].notna()
+            )
             # Only clear primary on rows that have SOME 2PP but not the classic pair
             # (these are alternative 2PP rows like ALP vs ONP)
             no_classic_2pp = has_any_2pp & ~has_classic_2pp
@@ -1406,8 +1503,14 @@ class WikipediaPollingScaper:
         self, table_indices: list[int] | None = None
     ) -> pd.DataFrame:
         """Scrape attitudinal and leadership polling data using the simple table extraction approach."""
-        # Get Party leaders table (preferred PM) - scan all tables, not just contiguous
-        pm_df = self.get_tables_simple(table_indices, must_have=["party leaders"], contiguous=False)
+        # Get Party leaders table (preferred PM) - scan all tables, not just contiguous.
+        # Attitudinal data lives on the separate leadership-approval page.
+        pm_df = self.get_tables_simple(
+            table_indices,
+            must_have=["party leaders"],
+            contiguous=False,
+            url=self.approval_url,
+        )
         if pm_df is not None:
             pm_df = self.fix_midtable_leader_change(pm_df)
 
@@ -1416,20 +1519,29 @@ class WikipediaPollingScaper:
         # This distinguishes them from other tables that mention leader names
         # (favourability, preferred leader, etc.) which have proper column names.
         sat_search = [PM_LEADER.lower()] + [l.lower() for l in OPPOSITION_LEADERS]
-        df_list = self.url_handler.get_table_list(self.url)
-        sat_indices = self.get_polling_table_indices(df_list, any_of=sat_search, contiguous=False)
+        df_list = self.url_handler.get_table_list(self.approval_url)
+        sat_indices = self.get_polling_table_indices(
+            df_list, any_of=sat_search, contiguous=False
+        )
         if sat_indices:
             # Filter to tables that have "unnamed" columns (satisfaction sub-header structure)
             sat_indices = [
-                i for i in sat_indices
-                if any("unnamed" in str(c).lower() for c in df_list[i].columns.get_level_values(0))
-                or any("unnamed" in str(c).lower() for c in df_list[i].columns.get_level_values(1))
+                i
+                for i in sat_indices
+                if any(
+                    "unnamed" in str(c).lower()
+                    for c in df_list[i].columns.get_level_values(0)
+                )
+                or any(
+                    "unnamed" in str(c).lower()
+                    for c in df_list[i].columns.get_level_values(1)
+                )
             ]
             logger.info("Satisfaction table indices after filtering: %s", sat_indices)
         # Process each satisfaction table from its raw MultiIndex form
         table_years = getattr(self.url_handler, "_table_years", {})
         sat_tables = []
-        for idx in (sat_indices or []):
+        for idx in sat_indices or []:
             t = self.process_satisfaction_table(df_list[idx])
             if t.empty:
                 continue
@@ -1456,7 +1568,10 @@ class WikipediaPollingScaper:
             for df in [pm_df, sat_df]:
                 if "Brand" not in df.columns:
                     for col in df.columns:
-                        if isinstance(col, str) and col.lower() in ("firm", "polling firm"):
+                        if isinstance(col, str) and col.lower() in (
+                            "firm",
+                            "polling firm",
+                        ):
                             df.rename(columns={col: "Brand"}, inplace=True)
                             break
             raw_extracted_df = pd.merge(
@@ -1469,7 +1584,7 @@ class WikipediaPollingScaper:
         else:
             # Fall back to legacy format
             raw_extracted_df = self.get_tables_simple(
-                table_indices, must_have=["prime minister"]
+                table_indices, must_have=["prime minister"], url=self.approval_url
             )
 
         if raw_extracted_df is None or raw_extracted_df.empty:
