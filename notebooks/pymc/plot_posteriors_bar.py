@@ -2,10 +2,10 @@
 
 import math
 
-import arviz as az
 import matplotlib.pyplot as plt
 import mgplot as mg
 import pandas as pd
+import xarray as xr
 
 from extraction import get_scalar_var, get_scalar_var_names
 
@@ -20,7 +20,7 @@ def _auto_scale(samples: pd.Series, median: float) -> tuple[pd.Series, int]:
 
 
 def plot_posteriors_bar(
-    trace: az.InferenceData,
+    trace: xr.DataTree,
     series_name: str = "Model",
     palette: str = "Blues",
     figsize: tuple[float, float] = (9.0, 2.0),
@@ -29,7 +29,7 @@ def plot_posteriors_bar(
     """Plot horizontal bar chart of scalar posterior distributions.
 
     Args:
-        trace: InferenceData from PyMC sampling
+        trace: posterior DataTree from PyMC sampling
         series_name: Name of the data series (e.g., "2PP vote ALP")
         palette: Matplotlib colormap name (e.g., "Blues", "Reds", "Greens")
         figsize: Figure size as (width, height) tuple

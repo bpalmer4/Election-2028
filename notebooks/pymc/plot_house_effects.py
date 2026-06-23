@@ -1,15 +1,15 @@
 """Bar chart plots for posterior distributions."""
 
-import arviz as az
 import matplotlib.pyplot as plt
 import mgplot as mg
 import pandas as pd
+import xarray as xr
 
 from extraction import get_house_effects_var
 
 
 def plot_house_effects_bar(
-    trace: az.InferenceData,
+    trace: xr.DataTree,
     firm_map: dict[int, str],
     model_name: str = "Model",
     poll_counts: dict[str, int] | None = None,
@@ -18,7 +18,7 @@ def plot_house_effects_bar(
     """Plot horizontal bar chart of house effects posteriors.
 
     Args:
-        trace: ArviZ InferenceData object
+        trace: ArviZ posterior DataTree object
         firm_map: Mapping from index to pollster name (inputs["back_firm_map"])
         model_name: Name for the model (used in plot title/footer)
         poll_counts: Optional mapping from pollster name to poll count

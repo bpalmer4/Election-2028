@@ -35,9 +35,9 @@ dependencies = [
     "selenium",
 
     # - Bayesian
-    "pymc",
-    "arviz<1.0.0",
-    "jax<0.10",  # numpyro 0.20.1 incompatible with jax 0.10+ (pyro-ppl/numpyro#2174)
+    "pymc>=6.0",
+    "arviz>=1.0",
+    "jax",
     "numpyro",
     "graphviz",
 

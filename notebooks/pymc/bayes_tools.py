@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pymc as pm  # type: ignore[import-untyped]
 import pytensor.tensor as pt
+import xarray as xr
 
 from common import MIDDLE_DATE, ensure
 
@@ -310,9 +311,7 @@ def core_likelihood(
         if sigma_obs is None:
             sigma_obs_hint = {"sigma": 5}
             print(f"sigma_obs HalfNormal prior: {sigma_obs_hint}")
-            sigma_obs = pm.HalfNormal(
-                "sigma_obs", **sigma_obs_hint
-            )
+            sigma_obs = pm.HalfNormal("sigma_obs", **sigma_obs_hint)
         mu = (
             voting_intention[inputs["poll_day"]]
             + house_effects[inputs["poll_firm_number"]]
@@ -456,7 +455,7 @@ MIN_BFMI = 0.3
 
 
 def check_model_diagnostics(
-    trace: az.InferenceData,
+    trace: xr.DataTree,
     verbose: bool = True,
 ) -> list[str]:
     """Check the inference data for potential problems.
@@ -476,14 +475,16 @@ def check_model_diagnostics(
       sampler explores the energy distribution. Values < 0.3 suggest poor exploration.
 
     Args:
-        trace: InferenceData from model fitting
+        trace: posterior DataTree from model fitting
         verbose: If True, print diagnostic results
 
     Returns:
         List of critical issues found (empty if none).
     """
     issues: list[str] = []
-    summary = az.summary(trace)
+    # arviz >=1.0 string-formats summary columns by default; round_to=None
+    # keeps them numeric so the comparisons below work.
+    summary = az.summary(trace, round_to=None)
 
     # Check model convergence (R-hat)
     statistic = summary.r_hat.max()
@@ -515,7 +516,7 @@ def check_model_diagnostics(
     # Check for divergences (rate-based: < 1 in 10,000 samples)
     try:
         diverging_count = int(np.sum(trace.sample_stats.diverging))
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         diverging_count = 0
     total_samples = trace.posterior.sizes["draw"] * trace.posterior.sizes["chain"]
     divergence_rate = diverging_count / total_samples
@@ -564,8 +565,9 @@ def check_model_diagnostics(
     except AttributeError:
         pass
 
-    # Check BFMI
-    statistic = az.bfmi(trace).min()
+    # Check BFMI. arviz >=1.0 returns a DataTree (per-chain "energy" variable)
+    # rather than a plain ndarray.
+    statistic = float(az.bfmi(trace)["energy"].min())
     is_problem = statistic < MIN_BFMI
     if verbose:
         prefix = "WARNING: " if is_problem else ""
@@ -576,7 +578,7 @@ def check_model_diagnostics(
     return issues
 
 
-def draw_samples(model: pm.Model, **kwargs) -> tuple[az.InferenceData, str]:
+def draw_samples(model: pm.Model, **kwargs) -> tuple[xr.DataTree, str]:
     """Draw samples from the posterior distribution (ie. run the model)."""
 
     plot_trace = kwargs.pop("plot_trace", True)
@@ -587,7 +589,16 @@ def draw_samples(model: pm.Model, **kwargs) -> tuple[az.InferenceData, str]:
             **kwargs,
         )
         if plot_trace:
-            az.plot_trace(idata)
+            # Only trace scalar parameters: arviz >=1.0 refuses to plot more
+            # than plot.max_subplots panels, and tracing the long daily
+            # voting_intention vector is not useful anyway.
+            scalar_vars = [
+                v
+                for v in idata.posterior.data_vars
+                if set(idata.posterior[v].dims) == {"chain", "draw"}
+            ]
+            if scalar_vars:
+                az.plot_trace(idata, var_names=scalar_vars)
     issues = check_model_diagnostics(idata, verbose=True)
     glitches = f"Sampling issues: {', '.join(issues)}" if issues else ""
     return (idata, glitches)
@@ -688,7 +699,7 @@ def _plot_residuals(
 
 def check_residuals(
     inputs: dict[str, Any],
-    trace: az.InferenceData,
+    trace: xr.DataTree,
     verbose: bool = True,
     plot_suspects: bool = True,
     show: bool = True,
@@ -706,7 +717,7 @@ def check_residuals(
 
     Args:
         inputs: The prepared data dict from prepare_data_for_analysis()
-        trace: InferenceData from model fitting
+        trace: posterior DataTree from model fitting
         verbose: If True, print diagnostic summary
         plot_suspects: If True, plot residuals for suspect pollsters
         show: If True, display the plots
@@ -889,7 +900,11 @@ def check_residuals(
 
     # Plot residuals for suspect pollsters
     if plot_suspects and suspect_data:
-        label = series_label if series_label is not None else inputs.get("column", "Unknown")
+        label = (
+            series_label
+            if series_label is not None
+            else inputs.get("column", "Unknown")
+        )
         for data in suspect_data:
             _plot_residuals(
                 firm_name=data["firm_name"],

@@ -1,10 +1,10 @@
 """Extract variables from PyMC traces."""
 
-import arviz as az
 import pandas as pd
+import xarray as xr
 
 
-def get_vector_var(var_name: str, trace: az.InferenceData) -> pd.DataFrame:
+def get_vector_var(var_name: str, trace: xr.DataTree) -> pd.DataFrame:
     """Extract chains/draws for a vector variable.
 
     Returns DataFrame with rows=vector elements, columns=samples.
@@ -15,13 +15,13 @@ def get_vector_var(var_name: str, trace: az.InferenceData) -> pd.DataFrame:
     return pd.DataFrame(data.values, index=range(data.shape[0]))
 
 
-def get_scalar_var(var_name: str, trace: az.InferenceData) -> pd.Series:
+def get_scalar_var(var_name: str, trace: xr.DataTree) -> pd.Series:
     """Extract chains/draws for a scalar variable as a Series."""
     data = trace.posterior[var_name].stack(sample=("chain", "draw"))
     return pd.Series(data.values.flatten())
 
 
-def get_scalar_var_names(trace: az.InferenceData) -> list[str]:
+def get_scalar_var_names(trace: xr.DataTree) -> list[str]:
     """Get names of scalar (non-vector) variables from trace."""
     scalar_vars = []
     for var_name in trace.posterior.data_vars:
@@ -32,7 +32,7 @@ def get_scalar_var_names(trace: az.InferenceData) -> list[str]:
     return scalar_vars
 
 
-def get_house_effects_var(trace: az.InferenceData) -> pd.DataFrame:
+def get_house_effects_var(trace: xr.DataTree) -> pd.DataFrame:
     """Extract house effects from trace, handling both combined and split cases.
 
     Handles:

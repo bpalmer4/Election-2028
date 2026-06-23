@@ -3,10 +3,10 @@
 from collections.abc import Sequence
 from typing import Any
 
-import arviz as az
 import matplotlib.pyplot as plt
 import mgplot as mg
 import pandas as pd
+import xarray as xr
 from matplotlib.axes import Axes
 
 from extraction import get_vector_var
@@ -17,7 +17,6 @@ POLLSTER_SYMBOLS = list("os^v<>Dp*hH+x1234")
 # Color fractions for colormap shades (matching house effects chart)
 COLOR_FRACS = (0.3, 0.5, 0.7)
 FIXED_ALPHA = 0.4
-
 
 
 def _rgba_to_hex(rgba: tuple) -> str:
@@ -54,7 +53,7 @@ def _plot_raw_polls(
 
 
 def plot_posterior_timeseries(
-    trace: az.InferenceData | None = None,
+    trace: xr.DataTree | None = None,
     var: str | None = None,
     index: pd.PeriodIndex | None = None,
     data: pd.DataFrame | None = None,
@@ -78,7 +77,7 @@ def plot_posterior_timeseries(
     2. Pre-computed DataFrame: provide data
 
     Args:
-        trace: ArviZ InferenceData object
+        trace: ArviZ posterior DataTree object
         var: Variable name to extract from trace
         index: PeriodIndex for the time series
         data: Pre-computed DataFrame of samples (time × draws)
