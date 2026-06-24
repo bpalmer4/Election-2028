@@ -253,6 +253,19 @@ def load_polling_data(data_type: str = "voting_intention") -> pd.DataFrame:
     # Load the data
     df = pd.read_csv(data_path)
     if "parsed_date" in df.columns:
+        # Drop rows whose date failed to parse. These are non-poll artifacts
+        # the scraper picks up from the Wikipedia table — e.g. the phantom row
+        # pandas emits for the rowspan'd 2025 election-result cell, which lands
+        # as "31.8%" across the first columns with an empty parsed_date.
+        dateless = df[df["parsed_date"].isna()]
+        if not dateless.empty:
+            print(
+                f"⚠️  WARNING: dropping {len(dateless)} row(s) with no parsed_date "
+                f"from {data_path} (likely Wikipedia table artifacts):"
+            )
+            for _, row in dateless.iterrows():
+                print(f"    {row.get('Date', '?')} | {row.get('Brand', '?')}")
+            df = df[df["parsed_date"].notna()].copy()
         df.index = pd.PeriodIndex(df["parsed_date"], freq="D")
 
     df = df.dropna(axis=1, how="all")  # drop all NAN columns

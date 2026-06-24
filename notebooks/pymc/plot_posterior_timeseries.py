@@ -5,9 +5,11 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 import mgplot as mg
+import numpy as np
 import pandas as pd
 import xarray as xr
 from matplotlib.axes import Axes
+from statsmodels.nonparametric.smoothers_lowess import lowess
 
 from extraction import get_vector_var
 
@@ -52,6 +54,33 @@ def _plot_raw_polls(
         )
 
 
+def _plot_loess(
+    ax: Axes,
+    poll_data: pd.DataFrame,
+    poll_column: str,
+    color: str,
+    day_span: int = 90,
+) -> None:
+    """Overlay a LOESS smoother of the raw polls as a dashed line.
+
+    Mirrors create_loess_smoothing in chart_LOESS_Trend_Analysis: frac is
+    day_span as a fraction of the full date span (capped at 1). Rendered with
+    mg.line_plot so it shares the date-formatted x-axis with the median line.
+    """
+    series = poll_data[poll_column].dropna().sort_index()
+    if series.empty:
+        return
+    ordinals = [p.ordinal for p in series.index]
+    denominator = np.max(ordinals) - np.min(ordinals)
+    fraction = day_span / denominator if denominator else 1
+    fraction = fraction if fraction < 1 else 1
+    smoothed = lowess(series, ordinals, frac=fraction)
+    loess = pd.Series(smoothed[:, 1], index=series.index)
+    loess = loess[~loess.index.duplicated(keep="first")]
+    loess.name = f"LOESS {day_span}-day"
+    mg.line_plot(loess, ax=ax, color=color, style="-.", width=1.5, annotate=False)
+
+
 def plot_posterior_timeseries(
     trace: xr.DataTree | None = None,
     var: str | None = None,
@@ -68,6 +97,8 @@ def plot_posterior_timeseries(
     color_fracs: Sequence[float] = COLOR_FRACS,
     ax: Axes | None = None,
     finalise: bool = True,
+    loess: bool = False,
+    loess_day_span: int = 90,
     **finalise_kwargs: Any,
 ) -> Axes | None:
     """Plot posterior time series with credible intervals.
@@ -93,6 +124,8 @@ def plot_posterior_timeseries(
         ax: Optional existing Axes to plot onto. If None, creates a new figure.
         finalise: If True, call finalise_plot and return None.
             If False, return Axes for composition.
+        loess: If True, overlay a dashed LOESS smoother of the raw polls.
+        loess_day_span: LOESS window in days (converted to lowess frac).
         **finalise_kwargs: Passed to mg.finalise_plot (title, lfooter, rfooter, etc.)
 
     Returns:
@@ -155,6 +188,9 @@ def plot_posterior_timeseries(
     median = samples.quantile(q=0.5, axis=1)
     median.name = f"{legend_stem} Median"
     ax = mg.line_plot(median, ax=ax, color=median_color, width=1, annotate=True)
+
+    if loess and poll_data is not None and poll_column is not None:
+        _plot_loess(ax, poll_data, poll_column, median_color, loess_day_span)
 
     if finalise and ax is not None:
         mg.finalise_plot(ax, **finalise_kwargs)
