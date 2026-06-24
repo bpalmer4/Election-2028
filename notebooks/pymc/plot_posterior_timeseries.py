@@ -60,16 +60,19 @@ def _plot_loess(
     poll_column: str,
     color: str,
     day_span: int = 90,
-) -> None:
+) -> pd.Series | None:
     """Overlay a LOESS smoother of the raw polls as a dashed line.
 
     Mirrors create_loess_smoothing in chart_LOESS_Trend_Analysis: frac is
     day_span as a fraction of the full date span (capped at 1). Rendered with
     mg.line_plot so it shares the date-formatted x-axis with the median line.
+
+    Returns the LOESS series (PeriodIndex over the poll dates) so callers can
+    reuse it for combined charts, or None if there is nothing to smooth.
     """
     series = poll_data[poll_column].dropna().sort_index()
     if series.empty:
-        return
+        return None
     ordinals = [p.ordinal for p in series.index]
     denominator = np.max(ordinals) - np.min(ordinals)
     fraction = day_span / denominator if denominator else 1
@@ -78,7 +81,8 @@ def _plot_loess(
     loess = pd.Series(smoothed[:, 1], index=series.index)
     loess = loess[~loess.index.duplicated(keep="first")]
     loess.name = f"LOESS {day_span}-day"
-    mg.line_plot(loess, ax=ax, color=color, style="-.", width=1.5, annotate=False)
+    mg.line_plot(loess, ax=ax, color=color, style="-.", width=1.5, annotate=True)
+    return loess
 
 
 def plot_posterior_timeseries(
@@ -100,7 +104,7 @@ def plot_posterior_timeseries(
     loess: bool = False,
     loess_day_span: int = 90,
     **finalise_kwargs: Any,
-) -> Axes | None:
+) -> Axes | pd.Series | None:
     """Plot posterior time series with credible intervals.
 
     Supports two modes:
@@ -129,7 +133,8 @@ def plot_posterior_timeseries(
         **finalise_kwargs: Passed to mg.finalise_plot (title, lfooter, rfooter, etc.)
 
     Returns:
-        Axes if finalise=False, None if finalise=True.
+        Axes if finalise=False. If finalise=True, returns the LOESS series
+        when loess=True (for reuse in combined charts), otherwise None.
 
     """
     if len(cuts) != len(color_fracs):
@@ -189,11 +194,14 @@ def plot_posterior_timeseries(
     median.name = f"{legend_stem} Median"
     ax = mg.line_plot(median, ax=ax, color=median_color, width=1, annotate=True)
 
+    loess_series: pd.Series | None = None
     if loess and poll_data is not None and poll_column is not None:
-        _plot_loess(ax, poll_data, poll_column, median_color, loess_day_span)
+        loess_series = _plot_loess(
+            ax, poll_data, poll_column, median_color, loess_day_span
+        )
 
     if finalise and ax is not None:
         mg.finalise_plot(ax, **finalise_kwargs)
-        return None
+        return loess_series
 
     return ax
