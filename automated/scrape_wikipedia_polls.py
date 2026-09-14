@@ -331,6 +331,11 @@ class DateParser:
 
         date = date.strip().lower()
 
+        # Strip "on or before/after" qualifiers Wikipedia uses when a firm
+        # gives only a bound on the fieldwork date (e.g. "≤14 Dec 2025").
+        # The bounding date itself is the best available estimate.
+        date = re.sub(r"[≤≥<>]\s*", "", date)
+
         # Check for ISO date format and convert to D M Y format
         iso = r"(\d{4})-(\d{2})-(\d{2})"
         while groups := re.search(iso, date):
@@ -1290,6 +1295,11 @@ class WikipediaPollingScaper:
         header_values_lower = {"polling firm", "firm", "brand", "date"}
         brand_lower = raw_df["Brand"].astype("string").str.lower()
         mask = raw_df["Brand"].notna() & ~brand_lower.isin(header_values_lower)
+        # Drop phantom rows left by read_html when it unwinds the rowspan'd
+        # election-result row at the foot of a table: the spill lands as a
+        # bare percentage in Date/Brand (e.g. "31.8%") with no other data.
+        # Every real polling firm's name contains a letter.
+        mask = mask & brand_lower.str.contains("[a-z]", regex=True, na=False)
         if "Interview mode" in raw_df.columns:
             mask = mask & (raw_df["Brand"] != raw_df["Interview mode"])
         df = raw_df[mask].copy()
