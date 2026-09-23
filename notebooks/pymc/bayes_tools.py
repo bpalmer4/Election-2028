@@ -1,16 +1,15 @@
 """Tools for doing Bayesian aggregation of polls"""
 
-from typing import Any, Optional
+from typing import Any
 
 import arviz as az
 import numpy as np
 import pandas as pd
-import pymc as pm  # type: ignore[import-untyped]
 import pytensor.tensor as pt
 import xarray as xr
 
+import pymc as pm  # type: ignore[import-untyped]
 from common import MIDDLE_DATE, ensure
-
 
 # --- Data preparation
 TAIL_CENTRED = "tail_centred"
@@ -96,9 +95,9 @@ def prepare_data_for_analysis(
     box["n_polls"] = len(zero_centered_y)
 
     # get our day-to-date mapping
-    right_anchor: Optional[tuple[pd.Period, float]] = kwargs.get("right_anchor", None)
+    right_anchor: tuple[pd.Period, float] | None = kwargs.get("right_anchor", None)
     box["right_anchor"] = right_anchor
-    left_anchor: Optional[tuple[pd.Period, float]] = kwargs.get("left_anchor", None)
+    left_anchor: tuple[pd.Period, float] | None = kwargs.get("left_anchor", None)
     box["left_anchor"] = left_anchor
     day_zero = pd.Period(
         left_anchor[0] if left_anchor is not None else df[MIDDLE_DATE].min(),
@@ -135,7 +134,7 @@ def prepare_data_for_analysis(
     ]
     if missing_firm:
         # firm is not in the data, but it is one we should exclude?
-        he_sum_exclusions = sorted(list(set(he_sum_exclusions) - set(missing_firm)))
+        he_sum_exclusions = sorted(set(he_sum_exclusions) - set(missing_firm))
     box["he_sum_exclusions"] = he_sum_exclusions
     he_sum_inclusions: list[str] = [
         e for e in df.Brand.unique() if e not in he_sum_exclusions
@@ -675,8 +674,13 @@ def _plot_residuals(
     # Add trend line using mg.line_plot (also sets x-axis date labels)
     z = np.polyfit(firm_days, firm_residuals, 1)
     poly = np.poly1d(z)
-    trend_values = poly(firm_days)
-    trend_series = pd.Series(trend_values, index=pd.PeriodIndex(periods, freq="D"))
+    # The fit is a straight line, so only its endpoints are needed. Using the
+    # endpoints rather than one point per poll keeps the index unique and
+    # monotonic even when a pollster has several polls on the same date.
+    trend_days = np.unique([int(firm_days.min()), int(firm_days.max())])
+    trend_values = poly(trend_days)
+    trend_periods = pd.PeriodIndex([day_zero + int(d) for d in trend_days], freq="D")
+    trend_series = pd.Series(trend_values, index=trend_periods)
     trend_series.name = "Trend"
     ax = mg.line_plot(trend_series, ax=ax, color="red", style="--", alpha=0.5)
 
@@ -787,7 +791,7 @@ def check_residuals(
         # Test for heteroskedasticity using Breusch-Pagan-like approach
         # Regress squared residuals on time (day number)
         squared_resid = firm_residuals**2
-        slope, intercept, r_value, het_pvalue, std_err = stats.linregress(
+        slope, _intercept, _r_value, het_pvalue, _std_err = stats.linregress(
             firm_days, squared_resid
         )
 
@@ -809,7 +813,7 @@ def check_residuals(
         mean_shift = second_half.mean() - first_half.mean()
 
         # Use Welch's t-test (doesn't assume equal variances)
-        t_stat, mean_shift_pvalue = stats.ttest_ind(
+        _t_stat, mean_shift_pvalue = stats.ttest_ind(
             first_half, second_half, equal_var=False
         )
 

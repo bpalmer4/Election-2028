@@ -39,6 +39,43 @@ BONHAM_SA26_FLOWS = {"L/NP": 0.339, "GRN": 0.848, "Others": 0.559}
 # one-line uncomment.
 THEORETICAL_ONP_FLOWS = {"L/NP": 0.25, "GRN": 0.90, "Others": 0.50}
 
+# Pollster aliases, keyed on the normalised brand (lowercased, "(MRP)" label
+# removed, whitespace stripped). Wikipedia labels the RedBridge/Accent series
+# inconsistently — sometimes plain "RedBridge"/"Redbridge".
+BRAND_ALIASES = {"redbridge": "redbridge/accent"}
+
+
+def _normalise_brands(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse pollster brand spelling variants into one name per pollster.
+
+    Brands are matched on a key that is lowercased, whitespace-stripped and
+    has any "(MRP)" label removed (so MRP polls fold into their parent
+    pollster), then passed through BRAND_ALIASES. Each key is restored to its
+    most common original spelling (MRP rows included in the count), drawn
+    from the spellings that match the key directly, so an alias target keeps
+    its own capitalisation.
+    """
+    if "Brand" not in df.columns:
+        return df
+    df = df.copy()
+    stripped = (
+        df["Brand"]
+        .astype("string")
+        .str.replace(r"\(MRP\)", "", case=False, regex=True)
+        .str.strip()
+    )
+    key = stripped.str.lower().replace(BRAND_ALIASES)
+
+    canonical: dict[str, str] = {}
+    for k in key.dropna().unique():
+        name = str(k)
+        direct = stripped[stripped.str.lower() == name]
+        pool = direct if not direct.empty else stripped[key == name]
+        canonical[name] = str(pool.value_counts().index[0])
+
+    df["Brand"] = key.map(canonical)
+    return df
+
 
 def format_flow_rates(flows: dict[str, float]) -> str:
     """Format an ALP-share flow dict as 'L/NP 33.9, GRN 84.8, Others 55.9'.
@@ -172,7 +209,12 @@ def _add_others_primary_vote(df: pd.DataFrame) -> pd.DataFrame:
     Wikipedia pollsters inconsistently break out IND — some lump
     independents into OTH. The combined bucket sidesteps that ambiguity.
     """
-    main = ["Primary vote ALP", "Primary vote L/NP", "Primary vote GRN", "Primary vote ONP"]
+    main = [
+        "Primary vote ALP",
+        "Primary vote L/NP",
+        "Primary vote GRN",
+        "Primary vote ONP",
+    ]
     others_cols = [c for c in df.columns if "Primary vote" in c and c not in main]
     if not others_cols:
         return df
@@ -193,7 +235,12 @@ def add_derived_2pp(df: pd.DataFrame, variant: dict) -> pd.DataFrame:
     definition, added directly) and the counter party (0%, omitted).
     """
     df = df.copy()
-    required = ["Primary vote ALP", "Primary vote L/NP", "Primary vote GRN", "Primary vote ONP"]
+    required = [
+        "Primary vote ALP",
+        "Primary vote L/NP",
+        "Primary vote GRN",
+        "Primary vote ONP",
+    ]
     if not all(c in df.columns for c in required):
         return df
     have_all = df[required].notna().all(axis=1)
@@ -238,7 +285,7 @@ def load_polling_data(data_type: str = "voting_intention") -> pd.DataFrame:
         )
         if recent_files:
             # Sort by filename (date suffix) and take most recent
-            most_recent = sorted(recent_files)[-1]
+            most_recent = max(recent_files)
             file_date = most_recent.stem.split("_")[-1]  # Extract date from filename
 
             print(f"⚠️  WARNING: No {data_type} data file found for today ({today})")
@@ -269,6 +316,7 @@ def load_polling_data(data_type: str = "voting_intention") -> pd.DataFrame:
         df.index = pd.PeriodIndex(df["parsed_date"], freq="D")
 
     df = df.dropna(axis=1, how="all")  # drop all NAN columns
+    df = _normalise_brands(df)
 
     # Note: rows in the CSV represent (poll, 2pp-matchup) pairs, not polls.
     # Wikipedia splits a single poll across multiple rows when more than one
