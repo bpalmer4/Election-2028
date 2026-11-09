@@ -62,6 +62,6 @@ def get_election_result(column: str) -> float | None:
         "Primary vote L/NP": election[COALITION],
         "Primary vote GRN": election["GRN"],
         "Primary vote ONP": election["ON"],
-        "Others Primary Vote": election[OTHER],
+        "Minor & Ind Primary Vote": election[OTHER],
     }
     return results_map.get(column)

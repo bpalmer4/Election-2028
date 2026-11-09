@@ -22,22 +22,23 @@ PREF_FLOWS_2025 = Path(
 
 # ALP share of preferences (0–1) for an ALP-vs-ONP matchup. The AEC didn't
 # run national ALP-vs-ONP 2pp counts in 2025, so we use two reference flow
-# sets. The "Others" bucket combines IND + OTH because pollsters don't all
-# break IND out — applying separate IND vs OTH rates would amplify pollster
-# bucketing noise rather than reduce it.
+# sets. The "Minor & Ind" bucket combines IND with Wikipedia's Others (OTH in
+# older captures) because pollsters don't all break IND out — applying
+# separate IND vs Others rates would amplify pollster bucketing noise rather
+# than reduce it.
 #
 # Bonham SA 2026 rates — from the Kevin Bonham aggregation post analysing
 # the 2026 South Australian election. He published L/NP, GRN and IND only;
-# we apply his IND rate to the combined Others bucket.
-BONHAM_SA26_FLOWS = {"L/NP": 0.339, "GRN": 0.848, "Others": 0.559}
+# we apply his IND rate to the combined Minor & Ind bucket.
+BONHAM_SA26_FLOWS = {"L/NP": 0.339, "GRN": 0.848, "Minor & Ind": 0.559}
 
 # Theoretical clean-round flows. GRN strongly prefers ALP over ONP; L/NP
-# weakly prefers ONP over ALP; Others sits roughly mid-range (the bucket
+# weakly prefers ONP over ALP; Minor & Ind sits roughly mid-range (the bucket
 # blends ALP-favouring IND with ONP-favouring minor parties).
 # Currently unused: the "synth-th" variant in derived_2pp_variants() that
 # consumes these flows is commented out. Kept here so re-enabling it is a
 # one-line uncomment.
-THEORETICAL_ONP_FLOWS = {"L/NP": 0.25, "GRN": 0.90, "Others": 0.50}
+THEORETICAL_ONP_FLOWS = {"L/NP": 0.25, "GRN": 0.90, "Minor & Ind": 0.50}
 
 # Pollster aliases, keyed on the normalised brand (lowercased, "(MRP)" label
 # removed, whitespace stripped). Wikipedia labels the RedBridge/Accent series
@@ -78,7 +79,7 @@ def _normalise_brands(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def format_flow_rates(flows: dict[str, float]) -> str:
-    """Format an ALP-share flow dict as 'L/NP 33.9, GRN 84.8, Others 55.9'.
+    """Format an ALP-share flow dict as 'L/NP 33.9, GRN 84.8, Minor & Ind 55.9'.
 
     Integers print without a decimal point (25 not 25.0); fractional values
     round to one decimal place.
@@ -98,18 +99,18 @@ def alp_flow_rates_2025() -> dict[str, float]:
     """ALP share (0–1) of preferences for each non-major-party bucket at
     the 2025 federal election (ALP-vs-L/NP context).
 
-    Buckets: GRN, ONP, Others. "Others" is the weighted average of IND +
-    every other minor party in the AEC flow file.
+    Buckets: GRN, ONP, Minor & Ind. "Minor & Ind" is the weighted average of
+    IND + every other minor party in the AEC flow file.
     """
     df = pd.read_csv(PREF_FLOWS_2025)
     rates: dict[str, float] = {}
     for ab, key in (("GRN", "GRN"), ("ON", "ONP")):
         row = df[df["PartyAb"] == ab].iloc[0]
         rates[key] = float(row["Australian Labor Party Transfer Percentage"]) / 100.0
-    others = df[~df["PartyAb"].isin(["LP", "NP", "GRN", "ON"]) & df["PartyAb"].notna()]
-    alp_votes = others["Australian Labor Party Transfer Votes"].sum()
-    lnp_votes = others["Liberal/National Coalition Transfer Votes"].sum()
-    rates["Others"] = float(alp_votes / (alp_votes + lnp_votes))
+    minor = df[~df["PartyAb"].isin(["LP", "NP", "GRN", "ON"]) & df["PartyAb"].notna()]
+    alp_votes = minor["Australian Labor Party Transfer Votes"].sum()
+    lnp_votes = minor["Liberal/National Coalition Transfer Votes"].sum()
+    rates["Minor & Ind"] = float(alp_votes / (alp_votes + lnp_votes))
     return rates
 
 
@@ -202,12 +203,12 @@ def _validate_and_normalise_2pp(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _add_others_primary_vote(df: pd.DataFrame) -> pd.DataFrame:
-    """Sum non-major primary-vote columns (IND, OTH, etc) into a single
-    ``Others Primary Vote`` column. Idempotent.
+def _add_minor_ind_primary_vote(df: pd.DataFrame) -> pd.DataFrame:
+    """Sum the remaining primary-vote columns (IND, Others, older OTH, etc)
+    into a single ``Minor & Ind Primary Vote`` column. Idempotent.
 
     Wikipedia pollsters inconsistently break out IND — some lump
-    independents into OTH. The combined bucket sidesteps that ambiguity.
+    independents into Others. The combined bucket sidesteps that ambiguity.
     """
     main = [
         "Primary vote ALP",
@@ -215,13 +216,13 @@ def _add_others_primary_vote(df: pd.DataFrame) -> pd.DataFrame:
         "Primary vote GRN",
         "Primary vote ONP",
     ]
-    others_cols = [c for c in df.columns if "Primary vote" in c and c not in main]
-    if not others_cols:
+    minor_cols = [c for c in df.columns if "Primary vote" in c and c not in main]
+    if not minor_cols:
         return df
     df = df.copy()
-    df["Others Primary Vote"] = df[others_cols].sum(axis=1, skipna=True)
-    all_nan = df[others_cols].isna().all(axis=1)
-    df.loc[all_nan, "Others Primary Vote"] = np.nan
+    df["Minor & Ind Primary Vote"] = df[minor_cols].sum(axis=1, skipna=True)
+    all_nan = df[minor_cols].isna().all(axis=1)
+    df.loc[all_nan, "Minor & Ind Primary Vote"] = np.nan
     return df
 
 
@@ -247,7 +248,11 @@ def add_derived_2pp(df: pd.DataFrame, variant: dict) -> pd.DataFrame:
 
     synth_alp = df["Primary vote ALP"].copy()
     for key, rate in variant["flows"].items():
-        col = "Others Primary Vote" if key == "Others" else f"Primary vote {key}"
+        col = (
+            "Minor & Ind Primary Vote"
+            if key == "Minor & Ind"
+            else f"Primary vote {key}"
+        )
         synth_alp = synth_alp + df[col].fillna(0) * rate
 
     name = variant["name"]
@@ -325,7 +330,7 @@ def load_polling_data(data_type: str = "voting_intention") -> pd.DataFrame:
     # filtering downstream is sufficient to de-duplicate primaries.
     if data_type == "voting_intention":
         df = _validate_and_normalise_2pp(df)
-        df = _add_others_primary_vote(df)
+        df = _add_minor_ind_primary_vote(df)
         for variant in derived_2pp_variants():
             df = add_derived_2pp(df, variant)
 

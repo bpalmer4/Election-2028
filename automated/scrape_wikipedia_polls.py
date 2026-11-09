@@ -6,20 +6,21 @@ on Australian federal elections, focusing on voting intention and
 preferred Prime Minister data.
 """
 
-import re
-import logging
 import datetime
-from pathlib import Path
+import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from io import StringIO
+from pathlib import Path
+from typing import ClassVar
+
 import numpy as np
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from bs4 import BeautifulSoup
-
 from utils import ensure
 
 # Leader names for attitudinal polling (add new leaders here)
@@ -43,7 +44,7 @@ class URLHandler:
     RETRY_ATTEMPTS = 3
     BACKOFF_FACTOR = 1
     TIMEOUT_SECONDS = 15
-    RETRY_STATUS_CODES = [429, 500, 502, 503, 504]
+    RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
 
     # Unicode space chars Wikipedia editors sometimes use in place of plain
     # ASCII spaces (NBSP, narrow NBSP, thin/hair/figure/punctuation/medium-math,
@@ -53,7 +54,10 @@ class URLHandler:
     # Invisible bidi/zero-width formatting marks (LRM/RLM, ZWSP/ZWNJ/ZWJ,
     # WJ, BOM, bidi embeds/isolates) that editors sometimes leave in cell
     # text. Stripped entirely so Brand strings stay stable.
-    _INVISIBLE_CHARS = "​‌‍‎‏⁠﻿‪‫‬‭‮⁦⁧⁨⁩"
+    _INVISIBLE_CHARS = (
+        "\u200b\u200c\u200d\u200e\u200f\u2060\ufeff"
+        "\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069"
+    )
     _SPACE_TRANSLATION = str.maketrans(
         {c: " " for c in _SPACE_CHARS} | {c: None for c in _INVISIBLE_CHARS}
     )
@@ -129,15 +133,17 @@ class URLHandler:
             raise
 
     def get_table_list(
-        self, url: str, header: list[int] | int = [0, 1]
+        self, url: str, header: list[int] | int | None = None
     ) -> list[pd.DataFrame]:
         """Return a list of tables found at a URL. Tables are returned in pandas DataFrame format."""
+        if header is None:
+            header = [0, 1]
         html = self.get_url(url)
         # Filter to wikitable-class tables only to avoid parsing
         # navigation/notice tables that may have fewer header rows
         soup = BeautifulSoup(html, "html.parser")
         wikitables = soup.find_all("table", class_="wikitable")
-        df_list = []
+        df_list: list[pd.DataFrame] = []
         self._table_years: dict[int, str] = {}
         for table in wikitables:
             # Sanitize colspan/rowspan: editors occasionally type "2;" etc.,
@@ -196,7 +202,7 @@ class DateParser:
     MAX_VALID_YEAR = 2028
 
     # Month info: (month_number, days_in_month)
-    MONTH_INFO: dict[str, tuple[str, int]] = {
+    MONTH_INFO: ClassVar[dict[str, tuple[str, int]]] = {
         "jan": ("01", 31),
         "feb": ("02", 28),
         "mar": ("03", 31),
@@ -210,7 +216,7 @@ class DateParser:
         "nov": ("11", 30),
         "dec": ("12", 31),
     }
-    MONTHS = {k: v[0] for k, v in MONTH_INFO.items()}
+    MONTHS: ClassVar[dict[str, str]] = {k: v[0] for k, v in MONTH_INFO.items()}
 
     @staticmethod
     def numericise(value: str) -> str:
@@ -420,6 +426,45 @@ class WikipediaPollingScaper:
                     parts.append(token)  # collapse repeated level labels
             flat.append(" ".join(parts))
         return flat
+
+    @staticmethod
+    def uppercase_vote_parties(columns: list[str]) -> list[str]:
+        """Uppercase the party abbreviation in vote-column headers.
+
+        Wikipedia editors change the case of party abbreviations from capture
+        to capture (``Primary vote GRN`` / ``Primary vote Grn``, ``IND`` /
+        ``Ind``). Downstream code uses uppercase names, so the party
+        abbreviation of any ``Primary vote …`` or ``2PP vote …`` header is
+        uppercased here. ``Others`` is a word, not an abbreviation, and is left
+        as Wikipedia writes it. Other headers (``Date``, ``Brand``,
+        preferred-PM surnames) are left unchanged.
+
+        Two different-case headers in one table (``Grn`` and ``GRN``) become
+        the same name after uppercasing. A repeated vote-column name is given a
+        pandas-style ``.N`` suffix so that ``merge_duplicate_columns`` merges it
+        into the first column. Other repeated names (such as the blank headers
+        that the caller drops) are left as they are.
+        """
+        prefixes = ("Primary vote ", "2PP vote ")
+        words = ("others",)  # party labels that are words, not abbreviations
+        dedup_suffix = re.compile(r"\.\d+$")
+        out: list[str] = []
+        seen: dict[str, int] = {}
+        for col in columns:
+            for prefix in prefixes:
+                if col.lower().startswith(prefix.lower()):
+                    party = col[len(prefix) :]
+                    if dedup_suffix.sub("", party).lower() not in words:
+                        party = party.upper()
+                    col = prefix + party
+                    if col in seen:
+                        seen[col] += 1
+                        col = f"{col}.{seen[col]}"
+                    else:
+                        seen[col] = 0
+                    break
+            out.append(col)
+        return out
 
     @staticmethod
     def merge_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -805,13 +850,13 @@ class WikipediaPollingScaper:
                 "Sample size": row["Sample size"],
             }
             for col_idx, col in enumerate(data_cols):
-                name = proper_names[col_idx]
-                if not name:
+                label = proper_names[col_idx]
+                if not label:
                     continue
                 value = row[col]
                 if isinstance(value, str) and value.strip().lower() in MISSING_VALUES:
                     value = np.nan
-                row_data[name] = value
+                row_data[label] = value
             final_rows.append(row_data)
 
         if not final_rows:
@@ -959,6 +1004,7 @@ class WikipediaPollingScaper:
             if verbose:
                 logger.debug("Table %d preview:\n%s", table_num, table.head())
             flat = WikipediaPollingScaper.flatten_col_names(table.columns)
+            flat = WikipediaPollingScaper.uppercase_vote_parties(flat)
             table.columns = pd.Index(flat)
             # Drop empty-named columns left by merged/spanned header cells
             # (e.g. trailing blank columns in the preferred-PM table). Keeping
@@ -981,10 +1027,8 @@ class WikipediaPollingScaper:
                 # Only append year to date strings that don't already contain a 4-digit year
                 year_pattern = re.compile(r"\d{4}")
                 table["Date"] = table["Date"].apply(
-                    lambda d, y=year: (
-                        f"{d} {y}"
-                        if isinstance(d, str) and not year_pattern.search(d)
-                        else d
+                    lambda d, y=year, p=year_pattern: (
+                        f"{d} {y}" if isinstance(d, str) and not p.search(d) else d
                     )
                 )
             if combined is None:
@@ -1059,7 +1103,7 @@ class WikipediaPollingScaper:
                 skip = True
             else:
                 # Check all column levels for pattern matching
-                all_levels = set()
+                all_levels: set[str] = set()
                 for level in range(df.columns.nlevels):
                     all_levels.update(df.columns.get_level_values(level).str.lower())
                 if any_of is not None:
@@ -1616,10 +1660,8 @@ class WikipediaPollingScaper:
                 year = table_years[idx]
                 year_pat = re.compile(r"\d{4}")
                 t["Date"] = t["Date"].apply(
-                    lambda d, y=year: (
-                        f"{d} {y}"
-                        if isinstance(d, str) and not year_pat.search(d)
-                        else d
+                    lambda d, y=year, p=year_pat: (
+                        f"{d} {y}" if isinstance(d, str) and not p.search(d) else d
                     )
                 )
             sat_tables.append(t)
@@ -1640,7 +1682,7 @@ class WikipediaPollingScaper:
                         ):
                             df.rename(columns={col: "Brand"}, inplace=True)
                             break
-            raw_extracted_df = pd.merge(
+            raw_extracted_df: pd.DataFrame | None = pd.merge(
                 pm_df, sat_df, on=["Date", "Brand", "Sample size"], how="outer"
             )
         elif pm_df is not None:
