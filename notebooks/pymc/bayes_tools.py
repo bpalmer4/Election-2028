@@ -7,12 +7,15 @@ import numpy as np
 import pandas as pd
 import pytensor.tensor as pt
 import xarray as xr
+from pytensor.tensor.variable import TensorVariable
 
 import pymc as pm  # type: ignore[import-untyped]
 from common import MIDDLE_DATE, ensure
 
 # --- Data preparation
 TAIL_CENTRED = "tail_centred"
+ERA_LABELS = ("pre", "post")  # house-effect periods either side of era_break
+MIN_POLLSTERS_PER_ERA = 2  # a per-era zero-median needs at least two houses
 
 
 def _check_he_constraints(box: dict[str, Any]) -> None:
@@ -59,6 +62,51 @@ def _check_he_constraints(box: dict[str, Any]) -> None:
             set(he_sum_exclusions) == set(he_sum_exclusions2),
             "The unconstrained pollsters should be last in the 'firm-list'.",
         )
+
+
+def _apply_era_break(box: dict[str, Any], era_break: pd.Timestamp) -> None:
+    """Re-key house effects from pollster to pollster-era units.
+
+    Polls with a middle date before era_break are era 0 ("pre"), the rest
+    era 1 ("post"). Each (pollster, era) pair with polls becomes one house
+    effect unit. The unit list replaces firm_list / firm_map /
+    poll_firm_number, so downstream consumers (residual checks, bar charts)
+    work on units unchanged. unit_brand / unit_era let the model pool each
+    pollster's post-break effect towards its pre-break one.
+    """
+
+    ensure(
+        not box["he_sum_exclusions"],
+        "era_break does not support he_sum_exclusions.",
+    )
+    df = box["df"]
+    brand_list: list[str] = box["firm_list"]
+    brand_map: dict[str, int] = box["firm_map"]
+    poll_era = (pd.to_datetime(df[MIDDLE_DATE]) >= era_break).astype(int)
+    poll_pairs = list(zip(df.Brand.map(brand_map), poll_era, strict=True))
+    pairs = sorted(set(poll_pairs), key=lambda p: (p[1], p[0]))
+    for era, label in enumerate(ERA_LABELS):
+        ensure(
+            sum(1 for _, e in pairs if e == era) >= MIN_POLLSTERS_PER_ERA,
+            f"era_break leaves fewer than {MIN_POLLSTERS_PER_ERA} pollsters "
+            f"in the {label} era.",
+        )
+    unit_map = {pair: i for i, pair in enumerate(pairs)}
+    labels = [f"{brand_list[b]} ({ERA_LABELS[e]})" for b, e in pairs]
+
+    box["era_break"] = era_break
+    box["brand_list"] = brand_list
+    box["n_brands"] = len(brand_list)
+    box["unit_brand"] = np.array([b for b, _ in pairs])
+    box["unit_era"] = np.array([e for _, e in pairs])
+    box["firm_list"] = labels
+    box["he_sum_inclusions"] = labels
+    box["n_firms"] = len(labels)
+    box["firm_map"] = {label: i for i, label in enumerate(labels)}
+    box["back_firm_map"] = dict(enumerate(labels))
+    box["poll_firm_number"] = pd.Series(
+        [unit_map[pair] for pair in poll_pairs], index=df.index
+    )
 
 
 def prepare_data_for_analysis(
@@ -156,6 +204,17 @@ def prepare_data_for_analysis(
     box["back_firm_map"] = {v: k for k, v in firm_map.items()}
     box["poll_firm_number"] = pd.Series([firm_map[b] for b in df.Brand], index=df.index)
 
+    # optional structural break: separate house effects either side of it
+    box["era_break"] = None
+    if (era_break := kwargs.get("era_break", None)) is not None:
+        _apply_era_break(box, pd.Timestamp(era_break))
+
+    # poll counts per house-effect unit (pollster, or pollster-era)
+    box["poll_counts"] = {
+        label: int((box["poll_firm_number"] == unit).sum())
+        for unit, label in box["back_firm_map"].items()
+    }
+
     # final sanity checks ...
     _check_he_constraints(box)
 
@@ -228,6 +287,63 @@ def _zero_median_transform(values: pt.TensorVariable) -> pt.TensorVariable:
     return values - median
 
 
+ERA_SHIFT_SD_PRIOR = 2.0  # HalfNormal sigma (pp) for pre->post house-effect shifts
+
+
+def _era_house_effects(
+    inputs: dict[str, Any],
+    model: pm.Model,
+    constraint: str,
+    house_effect_sigma: float,
+) -> TensorVariable:
+    """House effects with a structural break (see _apply_era_break).
+
+    - pre-break effect per pollster: raw_he ~ Normal(0, house_effect_sigma)
+    - post-break effect: raw_he + era_shift_sd * era_shift_z (non-centred),
+      i.e. partially pooled towards the pre-break effect. era_shift_sd is
+      learned: how much pollster practice moved across the break.
+    - zero median within each era, so a common shift of every pollster at the
+      break is absorbed by the trend rather than by the house effects.
+    Only (pollster, era) units with polls are returned, in unit order.
+    """
+
+    ensure(
+        constraint == "zero_median",
+        "era_break requires the zero_median constraint.",
+    )
+    ensure(
+        inputs["right_anchor"] is None and inputs["left_anchor"] is None,
+        "era_break does not support anchored models.",
+    )
+    unit_brand: np.ndarray = inputs["unit_brand"]
+    unit_era: np.ndarray = inputs["unit_era"]
+    n_brands: int = inputs["n_brands"]
+    with model:
+        raw_he = pm.Normal("raw_he", sigma=house_effect_sigma, shape=n_brands)
+        era_shift_sd = pm.HalfNormal("era_shift_sd", sigma=ERA_SHIFT_SD_PRIOR)
+        era_shift_z = pm.Normal("era_shift_z", sigma=1.0, shape=n_brands)
+        # flat [pre..., post...] vector; unit k reads era*n_brands + brand
+        raw_by_era = _as_tensor(
+            pt.concatenate([raw_he, raw_he + era_shift_sd * era_shift_z])
+        )
+        unit_raw = _as_tensor(raw_by_era[unit_era * n_brands + unit_brand])
+        centred = unit_raw
+        for era in range(len(ERA_LABELS)):
+            idx = np.flatnonzero(unit_era == era)
+            centred = _as_tensor(
+                pt.set_subtensor(centred[idx], _zero_median_transform(unit_raw[idx]))
+            )
+        house_effects = _as_tensor(pm.Deterministic("house_effects", centred))
+    return house_effects
+
+
+def _as_tensor(value: object) -> TensorVariable:
+    """Narrow a pytensor result to TensorVariable (stubs type many as Variable)."""
+    if not isinstance(value, TensorVariable):
+        raise TypeError(f"Expected a TensorVariable, got {type(value).__name__}.")
+    return value
+
+
 def house_effects_model(
     inputs: dict[str, Any], model: pm.Model, constraint: str = "zero_median"
 ) -> pt.TensorVariable:
@@ -244,6 +360,8 @@ def house_effects_model(
     """
 
     house_effect_sigma = inputs.get("house_effect_sigma", 5.0)
+    if inputs.get("era_break") is not None:
+        return _era_house_effects(inputs, model, constraint, house_effect_sigma)
     with model:
         if inputs["right_anchor"] is not None or inputs["left_anchor"] is not None:
             # all house effects are unconstrained, used in anchored models

@@ -21,6 +21,7 @@ import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
 from utils import ensure
 
 # Leader names for attitudinal polling (add new leaders here)
@@ -81,7 +82,7 @@ class URLHandler:
             df.columns = [
                 cls._clean_str(c) if isinstance(c, str) else c for c in df.columns
             ]
-        for col in df.select_dtypes(include="object").columns:
+        for col in df.select_dtypes(include=["object", "str"]).columns:
             df[col] = df[col].map(
                 lambda v: cls._clean_str(v) if isinstance(v, str) else v
             )
@@ -467,6 +468,17 @@ class WikipediaPollingScaper:
         return out
 
     @staticmethod
+    def _clean_numeric(series: pd.Series) -> pd.Series:
+        """Strip footnotes ("[ai]"), %, and whitespace, then convert to numeric."""
+        return pd.to_numeric(
+            series.astype(str)
+            .str.replace(r"\[.*?\]", "", regex=True)
+            .str.replace("%", "", regex=False)
+            .str.strip(),
+            errors="coerce",
+        )
+
+    @staticmethod
     def merge_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
         """Merge columns that are pandas auto-deduplicated copies (e.g. 'X.1', 'X.2').
 
@@ -495,15 +507,11 @@ class WikipediaPollingScaper:
         for base, dupes in base_to_dupes.items():
             all_cols = [base] + dupes
             logger.info("Merging duplicate columns: %s -> %s", all_cols, base)
-            # Strip % signs and convert to numeric for comparison
+            # Strip footnotes and % signs, then convert to numeric for comparison.
+            # Footnotes must go: a Lib cell of "13% [ai]" otherwise coerces to NaN
+            # and the merged L/NP silently becomes the Nat value alone.
             numeric_df = pd.DataFrame(
-                {
-                    c: pd.to_numeric(
-                        df[c].astype(str).str.replace("%", "", regex=False).str.strip(),
-                        errors="coerce",
-                    )
-                    for c in all_cols
-                }
+                {c: WikipediaPollingScaper._clean_numeric(df[c]) for c in all_cols}
             )
 
             # Colspan makes multiple sub-columns share the same value.
@@ -534,16 +542,7 @@ class WikipediaPollingScaper:
         if not (ind_col and oth_col):
             return df
 
-        def _clean_numeric(series: pd.Series) -> pd.Series:
-            """Strip %, footnotes, and whitespace then convert to numeric."""
-            return pd.to_numeric(
-                series.astype(str)
-                .str.replace(r"\[.*?\]", "", regex=True)
-                .str.replace("%", "", regex=False)
-                .str.strip(),
-                errors="coerce",
-            )
-
+        _clean_numeric = WikipediaPollingScaper._clean_numeric
         ind_num = _clean_numeric(df[ind_col])
         oth_num = _clean_numeric(df[oth_col])
         vote_numeric = pd.DataFrame({c: _clean_numeric(df[c]) for c in vote_cols})
@@ -1160,7 +1159,13 @@ class WikipediaPollingScaper:
                 df_list, table_indices, verbose=True, table_years=table_years
             )
 
-        except Exception as e:  # pylint: disable=broad-except
+        except (
+            requests.exceptions.RequestException,
+            AssertionError,
+            ValueError,
+            KeyError,
+            IndexError,
+        ) as e:
             logger.error("Failed to get tables: %s", e)
             return None
 
@@ -1262,9 +1267,12 @@ class WikipediaPollingScaper:
     ) -> pd.DataFrame:
         """Normalise polling data by ensuring all columns matching the pattern sum to 100%.
 
-        For rows where ALL columns have data:
-        - If sum is within [lower, upper]: normalize to 100%
-        - If sum is outside [lower, upper]: set values to NaN (unreliable data)
+        For rows where ALL columns have data and the sum is within
+        [lower, upper]: normalize to 100%.
+
+        Rows outside the range are left untouched here: flag_problematic_polls
+        blanks them AND flags them problematic. Blanking here first would hide
+        them from that flag, so a bad poll would look like one never reported.
 
         Rows with any missing values are skipped. This is different from distribute_undecideds
         which works with partial data."""
@@ -1297,19 +1305,6 @@ class WikipediaPollingScaper:
                 df.loc[to_normalize, col] = (
                     df.loc[to_normalize, col] / row_sums.loc[to_normalize] * 100
                 )
-
-        # NaN out rows that are outside range (unreliable data)
-        to_nan = all_columns_have_data & ~within_range
-        if to_nan.any():
-            logger.warning(
-                "Setting %d rows to NaN - sum outside [%d, %d] for pattern '%s'",
-                to_nan.sum(),
-                lower,
-                upper,
-                pattern,
-            )
-            for col in columns:
-                df.loc[to_nan, col] = pd.NA
 
         return df.copy()
 
@@ -1365,8 +1360,12 @@ class WikipediaPollingScaper:
         for col in df.columns:
             if numeric_col_filter(col) and _is_text_column(df[col]):
                 as_str = df[col].astype("string")
+                # Wikipedia writes negatives with U+2212 (−), which
+                # to_numeric rejects; normalise it to an ASCII hyphen.
                 df[col] = pd.to_numeric(
-                    as_str.str.replace("%", "", regex=False).str.strip(),
+                    as_str.str.replace("%", "", regex=False)
+                    .str.replace("−", "-", regex=False)
+                    .str.strip(),
                     errors="coerce",
                 )
 
@@ -1400,6 +1399,55 @@ class WikipediaPollingScaper:
         df["parsed_date"] = DateParser.parse_series(df["Date"])
 
         return df.reset_index(drop=True)
+
+    CORRECTIONS_FILE = Path(__file__).parent / "voting_intention_corrections.csv"
+
+    def apply_corrections(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply hand-maintained cell corrections for polls Wikipedia mis-enters.
+
+        Each correction row gives Date + Brand (as they appear after
+        preprocessing), a "Primary vote ..." column and the absolute value
+        that cell should hold. The target is the poll's primary-bearing row;
+        alternative 2PP rows share Date + Brand but have primaries cleared.
+        Corrections that match nothing, or are no longer needed, are logged
+        so the file can be pruned."""
+
+        if not self.CORRECTIONS_FILE.exists():
+            return df
+        corrections = pd.read_csv(self.CORRECTIONS_FILE)
+        df = df.copy()
+        primary_cols = [c for c in df.columns if c.startswith("Primary vote")]
+        has_primary = df[primary_cols].notna().any(axis=1)
+
+        for corr in corrections.itertuples(index=False):
+            date, brand, col = str(corr.Date), str(corr.Brand), str(corr.Column)
+            value = float(str(corr.Value))
+            label = f"{date} {brand} {col}"
+            if not col.startswith("Primary vote"):
+                logger.error("Correction %s: only primary columns supported", label)
+                continue
+            if col not in df.columns:
+                logger.warning("Correction %s: column not in scraped data", label)
+                continue
+            target = (df["Date"] == date) & (df["Brand"] == brand) & has_primary
+            n_match = int(target.sum())
+            if n_match != 1:
+                logger.warning(
+                    "Correction %s: matched %d rows (expected 1); skipped",
+                    label,
+                    n_match,
+                )
+                continue
+            current = df.loc[target, col].iloc[0]
+            if pd.notna(current) and float(current) == value:
+                logger.info("Correction %s: already %s; can be removed", label, value)
+                continue
+            logger.info("Correction %s: %s -> %s", label, current, value)
+            if pd.api.types.is_integer_dtype(df[col]):
+                df[col] = df[col].astype("Float64")
+            df.loc[target, col] = value
+
+        return df
 
     def flag_problematic_polls(self, df: pd.DataFrame) -> pd.DataFrame:
         """Flag polls with incomplete data OR that don't sum to expected range.
@@ -1437,21 +1485,23 @@ class WikipediaPollingScaper:
             # Complete but outside range: NaN the values
             complete_bad_sum = all_present & outside_range
             if complete_bad_sum.any():
+                logger.warning(
+                    "Blanking %d problematic rows - %s sum outside [%d, %d]",
+                    complete_bad_sum.sum(),
+                    pattern,
+                    lower,
+                    upper,
+                )
                 df.loc[complete_bad_sum, cols] = np.nan
 
             # Problematic if: (has data but incomplete) OR (complete but outside range)
             incomplete = has_any_data & ~all_present
             return incomplete | complete_bad_sum
 
-        primary_problem = check_and_nan_bad_sums(
-            "primary", self.PRIMARY_VOTE_LOWER, self.PRIMARY_VOTE_UPPER
-        )
-        tpp_problem = check_and_nan_bad_sums(
-            "2pp", self.TPP_VOTE_LOWER, self.TPP_VOTE_UPPER
-        )
-
         # Only flag problems on rows that have the relevant data.
         # Alternative 2PP rows (ALP vs ONP) have primary cleared and no L/NP 2PP.
+        # Computed BEFORE check_and_nan_bad_sums blanks bad rows; otherwise a
+        # blanked row looks like it never had data and escapes the flag.
         primary_cols = [c for c in df.columns if "primary" in c.lower()]
         has_primary = (
             df[primary_cols].notna().any(axis=1)
@@ -1462,6 +1512,14 @@ class WikipediaPollingScaper:
             df.get("2PP vote ALP", pd.Series(dtype="float64")).notna()
             & df.get("2PP vote L/NP", pd.Series(dtype="float64")).notna()
         )
+
+        primary_problem = check_and_nan_bad_sums(
+            "primary", self.PRIMARY_VOTE_LOWER, self.PRIMARY_VOTE_UPPER
+        )
+        tpp_problem = check_and_nan_bad_sums(
+            "2pp", self.TPP_VOTE_LOWER, self.TPP_VOTE_UPPER
+        )
+
         df["problematic"] = (primary_problem & has_primary) | (
             tpp_problem & has_classic_2pp
         )
@@ -1525,6 +1583,11 @@ class WikipediaPollingScaper:
         n_dropped = n_before - len(processed_df)
         if n_dropped:
             logger.info("Dropped %d exact-duplicate poll row(s)", n_dropped)
+
+        # Hand-maintained fixes for polls Wikipedia mis-enters (e.g. Qld LNP
+        # share only in a footnote). Before the sum checks, which would
+        # otherwise blank these rows.
+        processed_df = self.apply_corrections(processed_df)
 
         # Check for completeness
         processed_df = self.check_completeness(
@@ -1592,6 +1655,66 @@ class WikipediaPollingScaper:
 
         return processed_df
 
+    @staticmethod
+    def _dedupe_satisfaction(
+        df: pd.DataFrame, sat_cols: list[str], keys: list[str]
+    ) -> pd.DataFrame:
+        """Keep each poll's satisfaction readings on one row only.
+
+        Wikipedia splits a poll into several preferred-PM rows when the
+        pollster asks more than one matchup (e.g. Albanese v Taylor and
+        Albanese v Hanson), but the satisfaction table has one row per poll.
+        The outer merge copies the satisfaction values onto every matchup
+        row, which double-counts them in the satisfaction models. Keep them
+        on the row with the Albanese v opposition-leader matchup (or the
+        first row of the poll if there is none) and blank the rest.
+        """
+        if not sat_cols:
+            return df
+        opp_ppm_cols = [
+            c
+            for c in df.columns
+            if isinstance(c, str)
+            and c.startswith("Party leaders")
+            and any(c.endswith(f" {ld}") for ld in OPPOSITION_LEADERS)
+        ]
+        third_ppm_cols = [
+            c
+            for c in df.columns
+            if isinstance(c, str)
+            and c.startswith("Party leaders")
+            and c not in opp_ppm_cols
+            and not c.endswith((f" {PM_LEADER}", " Unsure", " Don't know"))
+        ]
+        df = df.reset_index(drop=True)
+        no_flags = pd.Series(False, index=df.index)
+        has_opp = df[opp_ppm_cols].notna().any(axis=1) if opp_ppm_cols else no_flags
+        has_third = (
+            df[third_ppm_cols].notna().any(axis=1) if third_ppm_cols else no_flags
+        )
+        is_two_way = has_opp & ~has_third
+        n_blanked = 0
+        for _, group in df.groupby(keys, dropna=False, sort=False):
+            if len(group) < 2:
+                continue
+            two_way = group.index[is_two_way.loc[group.index]]
+            with_opp = group.index[has_opp.loc[group.index]]
+            if len(two_way):
+                keep = two_way[0]
+            elif len(with_opp):
+                keep = with_opp[0]
+            else:
+                keep = group.index[0]
+            drop = [i for i in group.index if i != keep]
+            df.loc[drop, sat_cols] = np.nan
+            n_blanked += len(drop)
+        if n_blanked:
+            logger.info(
+                "Blanked duplicated satisfaction readings on %d split-matchup row(s)",
+                n_blanked,
+            )
+        return df
+
     def scrape_attitudinal_polls(
         self, table_indices: list[int] | None = None
     ) -> pd.DataFrame:
@@ -1650,7 +1773,7 @@ class WikipediaPollingScaper:
         logger.info("Leader-satisfaction table indices: %s", sat_indices)
         # Process each satisfaction table from its raw MultiIndex form
         table_years = getattr(self.url_handler, "_table_years", {})
-        sat_tables = []
+        sat_tables: list[pd.DataFrame] = []
         for idx in sat_indices or []:
             t = self.process_satisfaction_table(df_list[idx])
             if t.empty:
@@ -1665,10 +1788,17 @@ class WikipediaPollingScaper:
                     )
                 )
             sat_tables.append(t)
+        sat_df: pd.DataFrame | None = None
+        sat_value_cols: list[str] = []
         if sat_tables:
-            sat_df = pd.concat(sat_tables, ignore_index=True)
-        else:
-            sat_df = None
+            concatenated = pd.concat(sat_tables, ignore_index=True)
+            sat_value_cols = [
+                str(c)
+                for c in concatenated.columns
+                if str(c).lower() not in ("date", "brand", "firm", "polling firm")
+                and str(c) != "Sample size"
+            ]
+            sat_df = concatenated
 
         # Merge the tables on Date and Brand/Firm
         if pm_df is not None and sat_df is not None and not sat_df.empty:
@@ -1680,11 +1810,20 @@ class WikipediaPollingScaper:
                             "firm",
                             "polling firm",
                         ):
-                            df.rename(columns={col: "Brand"}, inplace=True)
+                            # Mutate the columns, not rebind: df is a loop
+                            # alias for pm_df / sat_df.
+                            df.columns = pd.Index(
+                                ["Brand" if c == col else c for c in df.columns]
+                            )
                             break
-            raw_extracted_df: pd.DataFrame | None = pd.merge(
-                pm_df, sat_df, on=["Date", "Brand", "Sample size"], how="outer"
+            merge_keys = ["Date", "Brand", "Sample size"]
+            merged = pd.merge(pm_df, sat_df, on=merge_keys, how="outer")
+            merged = self._dedupe_satisfaction(
+                merged,
+                sat_cols=sat_value_cols,
+                keys=merge_keys,
             )
+            raw_extracted_df: pd.DataFrame | None = merged
         elif pm_df is not None:
             raw_extracted_df = pm_df
         elif sat_df is not None:
